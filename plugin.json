@@ -1,0 +1,18 @@
+{
+  "id": "cpuFreq",
+  "name": "System Monitor",
+  "description": "CPU frequency (with governor, EPP, turbo and limits control), temperature, usage, RAM, GPU, fans and disk, in the bar and a tabbed popout.",
+  "version": "0.2.0",
+  "author": "you",
+  "icon": "memory",
+  "type": "widget",
+  "capabilities": [
+    "dankbar-widget"
+  ],
+  "component": "./CpuFreq.qml",
+  "settings": "./CpuFreqSettings.qml",
+  "permissions": [
+    "settings_read",
+    "settings_write"
+  ]
+}

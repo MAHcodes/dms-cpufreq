@@ -1,0 +1,391 @@
+#!/usr/bin/env bash
+# dms-cpufreqctl - read system state (any user) / change CPU frequency settings (root, via pkexec)
+#
+#   dms-cpufreqctl status [cpu mem gpu fans disk]     JSON; only the sections you name (default: all)
+#   pkexec /usr/local/bin/dms-cpufreqctl apply governor=X epp=Y turbo=0|1 min=<kHz|hw> max=<kHz|hw>
+#
+# Every value passed to `apply` is validated against what the kernel reports,
+# because that command runs as root. `status` never needs privileges.
+set -u
+shopt -s nullglob
+
+CPU=/sys/devices/system/cpu
+CPUFREQ=$CPU/cpufreq
+DRM=/sys/class/drm
+HWMON=/sys/class/hwmon
+MOUNTS=/proc/mounts
+
+rd() { [ -r "$1" ] && tr -d '\n' <"$1" 2>/dev/null; return 0; }
+is_uint() { [[ ${1:-} =~ ^[0-9]+$ ]]; }
+num() { if is_uint "${1:-}"; then printf '%s' "$((10#$1))"; else printf 'null'; fi; }
+numf() { if [[ ${1:-} =~ ^[0-9]+(\.[0-9]+)?$ ]]; then printf '%s' "$1"; else printf 'null'; fi; }
+trim() { local s=$1; s=${s#"${s%%[![:space:]]*}"}; s=${s%"${s##*[![:space:]]}"}; printf '%s' "$s"; }
+jstr() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/ }; printf '"%s"' "$s"; }
+jlist() {
+  local first=1 w
+  printf '['
+  for w in $1; do ((first)) || printf ','; first=0; jstr "$w"; done
+  printf ']'
+}
+die() { echo "dms-cpufreqctl: $*" >&2; exit 2; }
+
+# ---------------------------------------------------------------- status ----
+
+emit_temps() {
+  local pkg="" cores="" first=1 h name f lbl v n
+  for h in "$HWMON"/hwmon*; do
+    name=$(rd "$h/name")
+    case $name in
+      coretemp|k10temp|zenpower|cpu_thermal|cpu-thermal) ;;
+      *) continue ;;
+    esac
+    for f in "$h"/temp*_input; do
+      v=$(rd "$f")
+      [[ $v =~ ^-?[0-9]+$ ]] || continue
+      lbl=$(rd "${f%_input}_label")
+      case $lbl in
+        Package*|Tctl|Tdie) [ -n "$pkg" ] || pkg=$v ;;
+        Core\ [0-9]*)
+          n=${lbl#Core }
+          ((first)) || cores+=','
+          first=0
+          cores+="{\"id\":${n%% *},\"mc\":$v}"
+          ;;
+        "") [ -n "$pkg" ] || pkg=$v ;;
+      esac
+    done
+  done
+  printf '{"pkg":%s,"cores":[%s]}' "$(num "$pkg")" "$cores"
+}
+
+emit_stat() {
+  local name u n s i w q sq st rest all="[0,0]" cores="" first=1
+  while read -r name u n s i w q sq st rest; do
+    case $name in
+      cpu) all="[$((u + n + s + i + w + q + sq + st)),$((i + w))]" ;;
+      cpu[0-9]*)
+        ((first)) || cores+=','
+        first=0
+        cores+="[${name#cpu},$((u + n + s + i + w + q + sq + st)),$((i + w))]"
+        ;;
+      *) break ;;
+    esac
+  done </proc/stat
+  printf '{"all":%s,"cores":[%s]}' "$all" "$cores"
+}
+
+emit_cpu() {
+  local ref=$CPU/cpu0/cpufreq has=true
+  [ -d "$ref" ] || has=false
+
+  local driver gov govs epp epps smin smax hmin hmax base model turbo=null tsup=false
+  driver=$(rd "$ref/scaling_driver")
+  gov=$(rd "$ref/scaling_governor")
+  govs=$(rd "$ref/scaling_available_governors")
+  epp=$(rd "$ref/energy_performance_preference")
+  epps=$(rd "$ref/energy_performance_available_preferences")
+  smin=$(rd "$ref/scaling_min_freq")
+  smax=$(rd "$ref/scaling_max_freq")
+  hmin=$(rd "$ref/cpuinfo_min_freq")
+  hmax=$(rd "$ref/cpuinfo_max_freq")
+
+  if [ -r "$CPU/intel_pstate/no_turbo" ]; then
+    tsup=true
+    if [ "$(rd "$CPU/intel_pstate/no_turbo")" = 0 ]; then turbo=true; else turbo=false; fi
+    # With turbo off, intel_pstate effectively caps at the base frequency.
+    if [ "$turbo" = false ]; then
+      base=$(rd "$ref/base_frequency")
+      is_uint "$base" && hmax=$base
+    fi
+  elif [ -r "$CPUFREQ/boost" ]; then
+    tsup=true
+    if [ "$(rd "$CPUFREQ/boost")" = 1 ]; then turbo=true; else turbo=false; fi
+  fi
+
+  model=$(grep -m1 -E '^(model name|Model|Hardware)' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//')
+  [ -n "$model" ] || model="CPU"
+
+  printf '"cpu":{"hasFreq":%s,"model":%s,"driver":%s,' "$has" "$(jstr "$model")" "$(jstr "$driver")"
+  printf '"governor":%s,"governors":%s,' "$(jstr "$gov")" "$(jlist "$govs")"
+  printf '"epp":%s,"epps":%s,' "$(jstr "$epp")" "$(jlist "$epps")"
+  printf '"turboSupported":%s,"turbo":%s,' "$tsup" "$turbo"
+  printf '"hwMin":%s,"hwMax":%s,"scalingMin":%s,"scalingMax":%s,' \
+    "$(num "$hmin")" "$(num "$hmax")" "$(num "$smin")" "$(num "$smax")"
+
+  printf '"cores":['
+  local first=1 d id cur cid
+  while read -r d; do
+    [ -r "$d/cpufreq/scaling_cur_freq" ] || continue
+    id=${d##*/cpu}
+    cur=$(rd "$d/cpufreq/scaling_cur_freq")
+    cid=$(rd "$d/topology/core_id")
+    ((first)) || printf ','
+    first=0
+    printf '{"id":%s,"cur":%s,"cid":%s}' "$id" "$(num "$cur")" "$(num "$cid")"
+  done < <(printf '%s\n' "$CPU"/cpu[0-9]* | sort -V)
+  printf '],"temp":'
+  emit_temps
+  printf ',"stat":'
+  emit_stat
+  printf '}'
+}
+
+emit_mem() {
+  local k v rest total=0 avail=0 swt=0 swf=0
+  while read -r k v rest; do
+    case $k in
+      MemTotal:) total=$v ;;
+      MemAvailable:) avail=$v ;;
+      SwapTotal:) swt=$v ;;
+      SwapFree:) swf=$v ;;
+    esac
+  done </proc/meminfo
+  printf '"mem":{"total":%s,"avail":%s,"swapTotal":%s,"swapFree":%s}' \
+    "$(num "$total")" "$(num "$avail")" "$(num "$swt")" "$(num "$swf")"
+}
+
+emit_fans() {
+  local out="" first=1 h name f n lbl v
+  for h in "$HWMON"/hwmon*; do
+    name=$(rd "$h/name")
+    # GPU fans are reported in the GPU section instead
+    case $name in amdgpu|nouveau|nvidia|i915|xe) continue ;; esac
+    for f in "$h"/fan[0-9]*_input; do
+      v=$(rd "$f")
+      is_uint "$v" || continue
+      n=${f##*/fan}
+      n=${n%_input}
+      lbl=$(rd "$h/fan${n}_label")
+      [ -n "$lbl" ] || lbl="Fan $n"
+      ((first)) || out+=','
+      first=0
+      out+="{\"chip\":$(jstr "$name"),\"label\":$(jstr "$lbl"),\"rpm\":$((10#$v))}"
+    done
+  done
+  printf '"fans":[%s]' "$out"
+}
+
+emit_disks() {
+  local out="" first=1 seen=" " dev mnt fs rest bsz blocks bfree bavail line
+  while read -r dev mnt fs rest; do
+    case $fs in
+      ext2|ext3|ext4|btrfs|xfs|f2fs|vfat|exfat|ntfs|ntfs3|jfs|reiserfs|bcachefs) ;;
+      *) continue ;;
+    esac
+    [[ $dev == /dev/* ]] || continue
+    [[ $dev == /dev/loop* ]] && continue
+    case $seen in *" $dev "*) continue ;; esac     # btrfs subvolumes etc: first mount wins
+    mnt=$(printf '%b' "$mnt")                      # /proc/mounts escapes spaces as \040
+    line=$(stat -f -c '%S %b %f %a' -- "$mnt" 2>/dev/null) || continue
+    read -r bsz blocks bfree bavail <<<"$line"
+    is_uint "$bsz" && is_uint "$blocks" && is_uint "$bfree" && is_uint "$bavail" || continue
+    seen+="$dev "
+    ((first)) || out+=','
+    first=0
+    out+="{\"mount\":$(jstr "$mnt"),\"dev\":$(jstr "$dev"),\"fs\":$(jstr "$fs"),"
+    out+="\"total\":$((blocks * bsz)),\"used\":$(((blocks - bfree) * bsz)),\"avail\":$((bavail * bsz))}"
+  done <"$MOUNTS"
+  printf '"disks":[%s]' "$out"
+}
+
+emit_gpus() {
+  local out="" first=1 c base dev vendor driver state slot name
+  local usage vu vt temp fanrpm fanpct freq powerw hw v
+  for c in "$DRM"/card[0-9]*; do
+    base=${c##*/}
+    [[ $base =~ ^card[0-9]+$ ]] || continue
+    dev=$c/device
+    [ -d "$dev" ] || continue
+
+    vendor=$(rd "$dev/vendor")
+    driver=""
+    [ -e "$dev/driver" ] && driver=$(basename "$(readlink -f "$dev/driver")")
+    state=$(rd "$dev/power/runtime_status")
+    slot=$(grep -m1 '^PCI_SLOT_NAME=' "$dev/uevent" 2>/dev/null | cut -d= -f2)
+    usage=""; vu=""; vt=""; temp=""; fanrpm=""; fanpct=""; freq=""; powerw=""
+
+    case $vendor in
+      0x10de) name="NVIDIA GPU" ;;
+      0x1002) name="AMD GPU" ;;
+      0x8086) name="Intel GPU" ;;
+      *) name="GPU" ;;
+    esac
+    v=$(rd "$dev/product_name"); [ -n "$v" ] && name=$v
+
+    # Never wake a sleeping dGPU just to read numbers (hybrid laptops).
+    if [ "$state" != suspended ] && [ "$state" != suspending ]; then
+      # amdgpu-style sysfs
+      usage=$(rd "$dev/gpu_busy_percent")
+      vu=$(rd "$dev/mem_info_vram_used")
+      vt=$(rd "$dev/mem_info_vram_total")
+      # Intel i915
+      v=$(rd "$c/gt_cur_freq_mhz"); [ -n "$v" ] && freq=$v
+      # generic hwmon exposed by the driver
+      for hw in "$dev"/hwmon/hwmon*; do
+        v=$(rd "$hw/temp1_input");   is_uint "$v" && temp=$v
+        v=$(rd "$hw/fan1_input");    is_uint "$v" && fanrpm=$v
+        v=$(rd "$hw/pwm1");          is_uint "$v" && fanpct=$((v * 100 / 255))
+        v=$(rd "$hw/freq1_input");   is_uint "$v" && freq=$((v / 1000000))
+        v=$(rd "$hw/power1_average"); [ -n "$v" ] || v=$(rd "$hw/power1_input")
+        if is_uint "$v"; then powerw="$((v / 1000000)).$(printf '%02d' $(((v % 1000000) / 10000)))"; fi
+        break
+      done
+
+      # NVIDIA proprietary driver: only via nvidia-smi
+      if [ "$vendor" = 0x10de ] && [ -n "$slot" ] && command -v nvidia-smi >/dev/null 2>&1; then
+        local line nn nu nmu nmt nt nf np ng
+        line=$(timeout 3 nvidia-smi -i "$slot" \
+          --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed,power.draw,clocks.gr \
+          --format=csv,noheader,nounits 2>/dev/null | head -n1)
+        if [ -n "$line" ]; then
+          IFS=',' read -r nn nu nmu nmt nt nf np ng <<<"$line"
+          nn=$(trim "$nn"); [ -n "$nn" ] && name=$nn
+          nu=$(trim "$nu"); is_uint "$nu" && usage=$nu
+          nmu=$(trim "$nmu"); is_uint "$nmu" && vu=$((nmu * 1048576))
+          nmt=$(trim "$nmt"); is_uint "$nmt" && vt=$((nmt * 1048576))
+          nt=$(trim "$nt"); is_uint "$nt" && temp=$((nt * 1000))
+          nf=$(trim "$nf"); is_uint "$nf" && fanpct=$nf
+          np=$(trim "$np"); [[ $np =~ ^[0-9]+(\.[0-9]+)?$ ]] && powerw=$np
+          ng=$(trim "$ng"); is_uint "$ng" && freq=$ng
+        fi
+      fi
+    fi
+
+    ((first)) || out+=','
+    first=0
+    out+=$(printf '{"name":%s,"driver":%s,"vendor":%s,"state":%s,"usage":%s,"vramUsed":%s,"vramTotal":%s,"temp":%s,"fanRpm":%s,"fanPct":%s,"freq":%s,"powerW":%s}' \
+      "$(jstr "$name")" "$(jstr "$driver")" "$(jstr "$vendor")" "$(jstr "$state")" \
+      "$(num "$usage")" "$(num "$vu")" "$(num "$vt")" "$(num "$temp")" \
+      "$(num "$fanrpm")" "$(num "$fanpct")" "$(num "$freq")" "$(numf "$powerw")")
+  done
+  printf '"gpus":[%s]' "$out"
+}
+
+cmd_status() {
+  local sections=${*:-cpu mem gpu fans disk} s
+  local chunks=()
+  for s in $sections; do
+    case $s in
+      cpu) chunks+=("$(emit_cpu)") ;;
+      mem) chunks+=("$(emit_mem)") ;;
+      gpu) chunks+=("$(emit_gpus)") ;;
+      fans) chunks+=("$(emit_fans)") ;;
+      disk) chunks+=("$(emit_disks)") ;;
+    esac
+  done
+  local IFS=,
+  printf '{%s}\n' "${chunks[*]}"
+}
+
+# ----------------------------------------------------------------- apply ----
+
+fails=0
+wr() { # file value
+  if ! { printf '%s' "$2" >"$1"; } 2>/dev/null; then
+    echo "failed to write '$2' to $1" >&2
+    fails=$((fails + 1))
+    return 1
+  fi
+}
+
+cmd_apply() {
+  [ "$(id -u)" -eq 0 ] || die "apply must run as root (use pkexec)"
+
+  local gov="" epp="" turbo="" min="" max="" kv
+  for kv in "$@"; do
+    case $kv in
+      governor=*) gov=${kv#*=} ;;
+      epp=*) epp=${kv#*=} ;;
+      turbo=*) turbo=${kv#*=} ;;
+      min=*) min=${kv#*=} ;;
+      max=*) max=${kv#*=} ;;
+      *) die "unknown argument: $kv" ;;
+    esac
+  done
+
+  local ref=$CPU/cpu0/cpufreq p v
+  [ -d "$ref" ] || die "cpufreq interface not available"
+
+  # ---- validate everything before touching anything
+  if [ -n "$gov" ]; then
+    [[ $gov =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid governor"
+    [[ " $(rd "$ref/scaling_available_governors") " == *" $gov "* ]] || die "governor not available: $gov"
+  fi
+  if [ -n "$epp" ]; then
+    [[ $epp =~ ^[A-Za-z0-9_-]+$ ]] || die "invalid epp"
+    [[ " $(rd "$ref/energy_performance_available_preferences") " == *" $epp "* ]] || die "epp not available: $epp"
+  fi
+  if [ -n "$turbo" ]; then
+    [[ $turbo =~ ^[01]$ ]] || die "invalid turbo value"
+  fi
+  for v in min max; do
+    [ -n "${!v}" ] || continue
+    [ "${!v}" = hw ] && continue
+    is_uint "${!v}" || die "invalid $v"
+    printf -v "$v" '%s' "$((10#${!v}))"
+  done
+
+  # ---- turbo first (it changes the effective max)
+  if [ -n "$turbo" ]; then
+    if [ -e "$CPU/intel_pstate/no_turbo" ]; then
+      wr "$CPU/intel_pstate/no_turbo" "$((1 - turbo))"
+    elif [ -e "$CPUFREQ/boost" ]; then
+      wr "$CPUFREQ/boost" "$turbo"
+    else
+      echo "turbo control not supported on this system" >&2
+      fails=$((fails + 1))
+    fi
+  fi
+
+  # ---- governor, then EPP (EPP may be refused under some governors; non-fatal)
+  if [ -n "$gov" ]; then
+    for p in "$CPUFREQ"/policy[0-9]*; do wr "$p/scaling_governor" "$gov"; done
+  fi
+  if [ -n "$epp" ]; then
+    for p in "$CPUFREQ"/policy[0-9]*; do
+      [ -e "$p/energy_performance_preference" ] && wr "$p/energy_performance_preference" "$epp"
+    done
+  fi
+
+  # ---- frequency range, per policy, ordered so the kernel never sees min > max
+  if [ -n "$min$max" ]; then
+    local nmin nmax cmin cmax pmin pmax
+    for p in "$CPUFREQ"/policy[0-9]*; do
+      cmin=$(rd "$p/scaling_min_freq")
+      cmax=$(rd "$p/scaling_max_freq")
+      pmin=$(rd "$p/cpuinfo_min_freq")
+      pmax=$(rd "$p/cpuinfo_max_freq")
+      is_uint "$cmin" && is_uint "$cmax" && is_uint "$pmin" && is_uint "$pmax" || continue
+
+      nmin=${min:-$cmin}
+      nmax=${max:-$cmax}
+      [ "$min" = hw ] && nmin=$pmin
+      [ "$max" = hw ] && nmax=$pmax
+      ((nmin < pmin)) && nmin=$pmin
+      ((nmin > pmax)) && nmin=$pmax
+      ((nmax < pmin)) && nmax=$pmin
+      ((nmax > pmax)) && nmax=$pmax
+
+      if ((nmin > nmax)); then
+        echo "min exceeds max on ${p##*/}" >&2
+        fails=$((fails + 1))
+        continue
+      fi
+      if ((nmin > cmax)); then
+        wr "$p/scaling_max_freq" "$nmax"
+        wr "$p/scaling_min_freq" "$nmin"
+      else
+        wr "$p/scaling_min_freq" "$nmin"
+        wr "$p/scaling_max_freq" "$nmax"
+      fi
+    done
+  fi
+
+  ((fails == 0)) || exit 1
+}
+
+case ${1:-} in
+  status) shift; cmd_status "$@" ;;
+  apply) shift; cmd_apply "$@" ;;
+  *) echo "usage: dms-cpufreqctl status [cpu mem gpu fans disk] | apply key=value..." >&2; exit 2 ;;
+esac

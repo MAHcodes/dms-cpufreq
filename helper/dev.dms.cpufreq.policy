@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>dms-cpufreq</vendor>
+
+  <action id="dev.dms.cpufreq.apply">
+    <description>Change CPU frequency scaling settings</description>
+    <message>Authentication is required to change CPU frequency settings</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <!-- Active local session: no prompt. Running install.sh with the auth flag rewrites this to auth_admin_keep. -->
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/dms-cpufreqctl</annotate>
+  </action>
+</policyconfig>
