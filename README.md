@@ -35,6 +35,19 @@ This puts the helper at `/usr/local/bin/dms-cpufreqctl`, the polkit policy at
 enable **System Monitor** -> add it to a bar section -> `dms restart`.
 While developing, `dms ipc call plugins reload cpuFreq` reloads it.
 
+### Installing from the DMS plugin registry
+
+The registry (or `dms plugins install`) only copies the plugin files. This plugin also needs a small
+root helper and a polkit policy that live **outside** the plugin folder, so run the installer once
+from the plugin folder:
+
+```
+bash ~/.config/DankMaterialShell/plugins/<plugin folder>/install.sh
+```
+
+Until the helper is installed the popout shows "Waiting for data" and the bar shows an ellipsis.
+Optional: `nvidia-smi` for NVIDIA GPU stats.
+
 ## How it works
 
 ```
@@ -61,10 +74,13 @@ asking. Use `bash install.sh --auth` for prompts instead; re-run the installer t
 
 ## Design
 
-Components follow Material 3: primary tabs, single-select segmented buttons (long lists such as
-EPP wrap onto a second row), 52x32 switches, sliders with a value bubble, linear progress
-indicators and tonal cards. Text sizes follow the DMS widgets: `fontSizeMedium` in the horizontal
-bar, `fontSizeSmall` in the vertical bar, `fontSizeLarge` for headings. Colors only use `Theme`
+Components follow Material 3: primary tabs, single-select segmented buttons (selected option in the
+accent color, height follows the font size, up to 5 options per row (Energy preference uses 3 + 2 so every option keeps its icon), option icons only when they fit,
+inactive options with a subtle tonal fill), 52x32 switches, sliders with a value bubble, linear progress
+indicators and tonal cards. Bar text and icons are sized exactly like the built-in DankBar widgets
+(`Theme.barTextSize` with the bar's thickness, font scale and "maximize widget text" settings, and
+the icon size DMS provides), so they follow your bar settings; the popout uses `fontSizeSmall` /
+`fontSizeMedium` / `fontSizeLarge`. Colors only use `Theme`
 properties documented for DMS plugins.
 
 ## Testing status

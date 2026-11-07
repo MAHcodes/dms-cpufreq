@@ -58,7 +58,7 @@ PluginComponent {
 
     // ========================================================== state ======
     property var snap: null                      // last parsed status
-    property string err: "No data yet. Is dms-cpufreqctl installed? (run install.sh)"
+    property string err: "Waiting for data. If this stays empty, the helper is not installed: run install.sh from this plugin's folder (see README)."
     property var prevStat: null
     property real usageAll: 0
     property var usageById: ({})
@@ -318,7 +318,7 @@ PluginComponent {
         onExited: (code, status) => {
             if (code !== 0) {
                 root.snap = null
-                root.err = "dms-cpufreqctl status failed (exit " + code + "). Run install.sh."
+                root.err = "dms-cpufreqctl status failed (exit " + code + "). Run install.sh from this plugin's folder (see README)."
             }
         }
     }
@@ -469,6 +469,16 @@ PluginComponent {
         return ""
     }
 
+    // ===================================================== bar sizing ======
+    // Same sizing the built-in DankBar widgets use: text follows the bar's thickness,
+    // font scale and "maximize widget text" settings (injected by DMS into bar plugins).
+    // Falls back to fixed sizes if this DMS version does not provide them.
+    readonly property int barFontSize: (typeof Theme.barTextSize === "function" && root.barThickness)
+        ? Theme.barTextSize(root.barThickness, root.barConfig?.fontScale, root.barConfig?.maximizeWidgetText)
+        : Theme.fontSizeMedium
+    readonly property int barIconSize: root.iconSize > 0 ? root.iconSize : Theme.iconSize - 6
+    readonly property color barTextColor: Theme.widgetTextColor !== undefined ? Theme.widgetTextColor : Theme.surfaceText
+
     // ======================================================== bar pills ====
     // Entries are separated by two (non-breaking) spaces.
     horizontalBarPill: Component {
@@ -478,8 +488,8 @@ PluginComponent {
             StyledText {
                 visible: root.firstBarKey() === ""
                 text: root.snap ? "–" : "…"
-                font.pixelSize: Theme.fontSizeMedium
-                color: Theme.surfaceText
+                font.pixelSize: root.barFontSize
+                color: root.barTextColor
                 anchors.verticalCenter: parent.verticalCenter
             }
 
@@ -493,8 +503,8 @@ PluginComponent {
                     StyledText {
                         visible: root.firstBarKey() !== modelData
                         text: "\u00A0\u00A0"
-                        font.pixelSize: Theme.fontSizeMedium
-                        color: Theme.surfaceText
+                        font.pixelSize: root.barFontSize
+                        color: root.barTextColor
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
@@ -505,14 +515,14 @@ PluginComponent {
                         DankIcon {
                             visible: root.barIconShown(modelData)
                             name: root.metricIcons[modelData]
-                            size: Theme.iconSize - 6
+                            size: root.barIconSize
                             color: Theme.primary
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         StyledText {
                             text: root.barText(modelData, false)
-                            font.pixelSize: Theme.fontSizeMedium
-                            color: Theme.surfaceText
+                            font.pixelSize: root.barFontSize
+                            color: root.barTextColor
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -528,8 +538,8 @@ PluginComponent {
             StyledText {
                 visible: root.firstBarKey() === ""
                 text: root.snap ? "–" : "…"
-                font.pixelSize: Theme.fontSizeSmall
-                color: Theme.surfaceText
+                font.pixelSize: root.barFontSize
+                color: root.barTextColor
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
@@ -544,14 +554,14 @@ PluginComponent {
                     DankIcon {
                         visible: root.barIconShown(modelData)
                         name: root.metricIcons[modelData]
-                        size: Theme.iconSize - 6
+                        size: root.barIconSize
                         color: Theme.primary
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     StyledText {
                         text: root.barText(modelData, true)
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.surfaceText
+                        font.pixelSize: root.barFontSize
+                        color: root.barTextColor
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
@@ -673,6 +683,7 @@ PluginComponent {
                                 FieldLabel { text: "Energy preference"; icon: "battery_charging_full" }
                                 SegmentedControl {
                                     width: parent.width
+                                    maxPerRow: 4          // five options -> 3 + 2, wide enough for icons
                                     options: root.eppOptions
                                     current: root.cpu ? root.cpu.epp : ""
                                     onSelected: value => root.setEpp(value)

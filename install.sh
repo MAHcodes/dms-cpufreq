@@ -31,14 +31,25 @@ sudo install -Dm644 "$policy" /usr/share/polkit-1/actions/dev.dms.cpufreq.policy
 # Older versions of this plugin documented a rules.d file; remove it if present.
 [ -e /etc/polkit-1/rules.d/49-dms-cpufreq.rules ] && sudo rm -f /etc/polkit-1/rules.d/49-dms-cpufreq.rules
 
-echo "==> Linking plugin into $plugins"
-mkdir -p "$plugins"
-if [ -L "$target" ] || [ ! -e "$target" ]; then
-  ln -sfn "$here" "$target"
-else
-  echo "$target already exists and is not a symlink; leaving it alone" >&2
-  exit 1
-fi
+# When installed from the plugin registry this script already lives inside the plugins
+# directory, so there is nothing to link. Only link when run from a separate checkout.
+here_real=$(readlink -f "$here")
+plugins_real=$(readlink -f "$plugins" 2>/dev/null || echo "$plugins")
+case "$here_real" in
+  "$plugins_real"/*)
+    echo "==> Plugin already lives in $plugins, not linking"
+    ;;
+  *)
+    echo "==> Linking plugin into $plugins"
+    mkdir -p "$plugins"
+    if [ -L "$target" ] || [ ! -e "$target" ]; then
+      ln -sfn "$here" "$target"
+    else
+      echo "$target already exists and is not a symlink; leaving it alone" >&2
+      exit 1
+    fi
+    ;;
+esac
 
 cat <<MSG
 
