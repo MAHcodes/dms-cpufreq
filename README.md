@@ -2,6 +2,7 @@
 
 > [!WARNING]
 > **Disclaimer:** This project was "vibe coded" primarily for personal use that I decided to open-source. It is provided as-is, without any warranties.
+>
 > **USE AT YOUR OWN RISK**
 
 CPU frequency control and system monitoring for DankMaterialShell (DMS), modelled on
