@@ -2,8 +2,8 @@
   "id": "cpuFreq",
   "name": "System Monitor",
   "description": "CPU frequency (governor, EPP, turbo, limits), temperature, usage, RAM, GPU, fans, disk and battery (charge limits, TLP profiles and tuning), in the bar and a tabbed popout.",
-  "version": "0.5.0",
-  "author": "YOUR_GITHUB_USERNAME",
+  "version": "0.5.1",
+  "author": "MAHcodes",
   "icon": "memory",
   "type": "widget",
   "capabilities": [

@@ -31,6 +31,13 @@ Column {
                 anchors.verticalCenter: parent.verticalCenter
             }
             StyledText {
+                id: labelText
+                // leave room for the value; implicitWidth keeps the full text, so
+                // valueText's width (which depends on this row) never loops back
+                width: Math.max(0, Math.min(implicitWidth,
+                        row.width - valueText.implicitWidth - Theme.spacingM
+                        - (row.icon !== "" ? Theme.iconSize - 8 + Theme.spacingS : 0)))
+                elide: Text.ElideRight
                 text: row.label
                 font.pixelSize: Theme.fontSizeMedium
                 color: Theme.surfaceText
@@ -39,6 +46,7 @@ Column {
         }
 
         StyledText {
+            id: valueText
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             text: row.value

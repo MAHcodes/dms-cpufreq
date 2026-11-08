@@ -16,6 +16,7 @@ Column {
     property string noValue: "0"
     property real from: 0                   // slider
     property real to: 100
+    property real def: 0                    // slider position when the value is unset
     property string unit: ""
     property bool managed: false            // present in this plugin's /etc/tlp.d drop-in
     property string source: ""              // file the effective value comes from
@@ -76,7 +77,7 @@ Column {
         from: f.from
         to: f.to
         step: 1
-        value: parseInt(f.shown) || 0
+        value: f.shown === "" ? f.def : (parseInt(f.shown) || 0)
         valueText: Math.round(sl.shown) + f.unit
         onReleased: nv => f.choose(String(Math.round(nv)))
     }

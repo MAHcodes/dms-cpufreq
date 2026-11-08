@@ -45,6 +45,9 @@ Item {
                     }
                     StyledText {
                         text: modelData.label
+                        width: tab.width - Theme.spacingS * 2
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
                         font.pixelSize: Theme.fontSizeSmall
                         font.weight: tab.active ? Font.Bold : Font.Normal
                         color: tab.active ? Theme.primary : Theme.surfaceVariantText

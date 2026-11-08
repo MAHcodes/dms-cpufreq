@@ -26,7 +26,7 @@ Eight metrics, each with its own **popout tab** and its own **settings tab**:
 Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
 
-Per-core temperatures and frequencies use a configurable grid (1-4 columns). Note that CPU
+Per-core temperatures and frequencies use a configurable grid (1-6 columns). Note that CPU
 temperature sensors are per **physical** core: a 6-core / 12-thread CPU such as the i7-8750H reports
 6 readings (`coretemp`), not 12. The Temp tab says so and shows the core/thread counts.
 
@@ -127,7 +127,7 @@ tonal fill), 52x32 switches, sliders with a value bubble, linear progress indica
 cards. Bar text and icons are sized exactly like the built-in DankBar widgets (`Theme.barTextSize`
 with the bar's thickness, font scale and "maximize widget text" settings, and the icon size DMS
 provides), so they follow your bar settings; the popout uses `fontSizeSmall` / `fontSizeMedium` /
-`fontSizeXLarge` and elides long values. Colors only use `Theme` properties documented for DMS
+`fontSizeXXLarge` and elides long values. Colors only use `Theme` properties documented for DMS
 plugins.
 
 ## Testing status

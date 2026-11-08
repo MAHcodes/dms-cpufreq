@@ -742,7 +742,7 @@ PluginComponent {
     }
 
     Timer {
-        interval: parseInt(root.opt("refreshInterval", "2000"))
+        interval: Math.max(250, parseInt(root.opt("refreshInterval", "2000")) || 2000)
         running: true
         repeat: true
         triggeredOnStart: true
@@ -904,8 +904,8 @@ PluginComponent {
             { base: "PLATFORM_PROFILE", label: "Platform profile", icon: "tune", type: "seg", from: "platform", sav: true },
             { base: "CPU_BOOST", label: "Turbo boost", icon: "bolt", type: "switch", sav: true },
             { base: "CPU_HWP_DYN_BOOST", label: "HWP dynamic boost", icon: "electric_bolt", type: "switch", sav: true },
-            { base: "CPU_MIN_PERF", label: "Minimum performance", icon: "vertical_align_bottom", type: "slider", min: 0, max: 100, unit: "%", sav: true },
-            { base: "CPU_MAX_PERF", label: "Maximum performance", icon: "vertical_align_top", type: "slider", min: 0, max: 100, unit: "%", sav: true }
+            { base: "CPU_MIN_PERF", label: "Minimum performance", icon: "vertical_align_bottom", type: "slider", min: 0, max: 100, unit: "%", def: 0, sav: true },
+            { base: "CPU_MAX_PERF", label: "Maximum performance", icon: "vertical_align_top", type: "slider", min: 0, max: 100, unit: "%", def: 100, sav: true }
         ] },
         { title: "Graphics", icon: "auto_awesome_mosaic", items: [
             { base: "AMDGPU_ABM_LEVEL", label: "AMD display power saving", icon: "brightness_medium", type: "seg", sav: true,
@@ -920,7 +920,7 @@ PluginComponent {
                          { label: "Save", value: "powersave" }, { label: "Max save", value: "powersupersave" } ] },
             { base: "RUNTIME_PM", label: "Runtime power management", icon: "power_settings_new", type: "switch", onValue: "auto", offValue: "on" },
             { base: "WIFI_PWR", label: "Wi-Fi power saving", icon: "wifi", type: "switch", onValue: "on", offValue: "off" },
-            { base: "SOUND_POWER_SAVE", label: "Audio power saving", icon: "volume_down", type: "switch", onValue: "1", offValue: "0" },
+            { base: "SOUND_POWER_SAVE", label: "Audio power-save timeout", icon: "volume_down", type: "slider", min: 0, max: 60, unit: " s", def: 10 },
             { base: "SATA_LINKPWR", label: "SATA link power", icon: "storage", type: "seg",
               options: [ { label: "Max perf", value: "max_performance" }, { label: "Medium", value: "medium_power" },
                          { label: "Med + DIPM", value: "med_power_with_dipm" }, { label: "Min power", value: "min_power" } ] },
@@ -2297,6 +2297,7 @@ PluginComponent {
                                                 noValue: modelData.offValue !== undefined ? modelData.offValue : "0"
                                                 from: modelData.min !== undefined ? modelData.min : 0
                                                 to: modelData.max !== undefined ? modelData.max : 100
+                                                def: modelData.def !== undefined ? modelData.def : 0
                                                 unit: modelData.unit !== undefined ? modelData.unit : ""
                                                 value: root.tlpValue(k)
                                                 managed: root.tlpManaged(k)

@@ -26,6 +26,8 @@ Item {
         }
         StyledText {
             text: r.label
+            width: Math.max(0, r.width - 70 - (r.icon !== "" ? Theme.iconSize - 4 + Theme.spacingM : 0))
+            elide: Text.ElideRight
             font.pixelSize: Theme.fontSizeMedium
             color: Theme.surfaceText
             anchors.verticalCenter: parent.verticalCenter
