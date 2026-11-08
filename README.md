@@ -10,13 +10,11 @@ CPU frequency control and system monitoring for DankMaterialShell (DMS), modelle
 
 ## What you get
 
-Eight metrics, each with its own **popout tab** and its own **settings tab**:
+Six metrics, each with its own **popout tab** and its own **settings tab**:
 
 | Metric | Popout tab | Per-metric settings |
 |---|---|---|
-| Frequency | turbo, profile, governor, energy preference, min/max limits, per-core grid | bar values (min/avg/max, any mix), unit GHz/MHz, decimals, show/hide min limit, show/hide max limit, per-core grid columns |
-| Temperature | package + per-core temperatures | unit C/F, show/hide per-core, per-core grid columns |
-| CPU usage | total + per-core | per-core grid columns |
+| CPU | header cards for frequency, temperature and usage; turbo, profile, governor, energy preference, min/max limits; per-core frequency, temperature and usage grids | bar values (any mix: min/avg/max frequency, temperature, usage), summary value, unit GHz/MHz, decimals, temperature unit C/F, show/hide min/max limit, grid columns per per-core grid |
 | RAM | used / available / free / cached / buffers / shared / total / swap / ZRAM | bar values (any mix: percent, used, available, free, used/total), unit |
 | GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar values (any mix: usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
 | Fans | every fan reported by hwmon | bar value (fastest or average) |
@@ -30,7 +28,7 @@ See [STATS.md](STATS.md) for a guide to every reading: what it means, where it c
 
 Per-core temperatures and frequencies use a configurable grid (1-6 columns). Note that CPU
 temperature sensors are per **physical** core: a 6-core / 12-thread CPU such as the i7-8750H reports
-6 readings (`coretemp`), not 12. The Temp tab says so and shows the core/thread counts.
+6 readings (`coretemp`), not 12. The CPU tab's Physical cores card shows the core/thread counts.
 
 GPU data comes from sysfs/hwmon, plus a single `nvidia-smi --query-gpu` call on NVIDIA (with a
 fallback to the basic field set on older drivers). A runtime-suspended GPU is still never queried.

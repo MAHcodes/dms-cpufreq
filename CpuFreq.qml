@@ -85,6 +85,69 @@ PluginComponent {
         }
     }
 
+    // Compact variant of the hero card for the CPU tab header: one card per
+    // reading (frequency / temperature / usage), side by side.
+    component HeroStat: StyledRect {
+        id: hs
+
+        property string icon: ""
+        property string value: ""
+        property string caption: ""
+        property real progress: -1          // 0..100, negative hides the bar
+
+        radius: Theme.cornerRadiusL
+        color: Theme.primaryContainer
+        height: col.implicitHeight + Theme.spacingM * 2
+
+        Column {
+            id: col
+            x: Theme.spacingM
+            y: Theme.spacingM
+            width: parent.width - Theme.spacingM * 2
+            spacing: Theme.spacingS
+
+            Row {
+                id: hsHead
+                width: parent.width
+                spacing: Theme.spacingS
+
+                DankIcon {
+                    id: hsIco
+                    name: hs.icon
+                    size: Theme.iconSize - 8
+                    color: Theme.onPrimaryContainer
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    StyledText {
+                        text: hs.value
+                        font.pixelSize: Theme.fontSizeLarge
+                        font.weight: Font.Bold
+                        color: Theme.onPrimaryContainer
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, hsHead.width - hsIco.width - hsHead.spacing)
+                    }
+                    StyledText {
+                        text: hs.caption
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.onPrimaryContainer
+                        opacity: 0.8
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, hsHead.width - hsIco.width - hsHead.spacing)
+                    }
+                }
+            }
+
+            Meter {
+                visible: hs.progress >= 0
+                width: parent.width
+                value: hs.progress
+            }
+        }
+    }
+
     // Material 3 filled section card: an optional small header over a padded
     // body column. Children of a `SectionCard { ... }` land in that body.
     component SectionCard: StyledRect {
@@ -151,20 +214,20 @@ PluginComponent {
     readonly property string ctl: "/usr/local/bin/dms-cpufreqctl"
 
     // ===================================================== metric registry ==
-    readonly property var metricKeys: ["freq", "temp", "usage", "mem", "gpu", "fans", "disk", "bat"]
+    // freq/temp/usage used to be three separate metrics; they merged into one
+    // "cpu" metric (one tab, one settings page, one bar icon). Their old
+    // settings keys are still read as fallbacks (see optL).
+    readonly property var metricKeys: ["cpu", "mem", "gpu", "fans", "disk", "bat"]
     readonly property var metricIcons: ({
-        freq: "speed",
-        temp: "thermostat",
-        usage: "memory",
-        mem: "developer_board",
+        cpu: "developer_board",
+        mem: "memory",
         gpu: "auto_awesome_mosaic",
         fans: "mode_fan",
         disk: "storage",
         bat: "battery_full"
     })
     readonly property var metricLabels: ({
-        freq: "Freq", temp: "Temp", usage: "Usage", mem: "RAM", gpu: "GPU", fans: "Fans", disk: "Disk",
-        bat: "Battery"
+        cpu: "CPU", mem: "RAM", gpu: "GPU", fans: "Fans", disk: "Disk", bat: "Battery"
     })
     readonly property var platformIcons: ({
         performance: "rocket_launch", "balanced-performance": "speed", balanced: "balance",
@@ -206,6 +269,12 @@ PluginComponent {
     function opt(key, def) {
         const v = pluginData ? pluginData[key] : undefined
         return (v === undefined || v === null || v === "") ? def : v
+    }
+
+    // setting with a legacy fallback key (used by the merged cpu metric)
+    function optL(key, legacyKey, def) {
+        const v = pluginData ? pluginData[key] : undefined
+        return (v === undefined || v === null || v === "") ? opt(legacyKey, def) : v
     }
 
     // GPU popout sections are individually toggleable (see CpuFreqSettings).
@@ -267,9 +336,7 @@ PluginComponent {
     // ===================================================== availability ====
     function available(key) {
         switch (key) {
-        case "freq": return cpu != null && cpu.hasFreq === true && cores.length > 0
-        case "temp": return cpu != null && (cpu.temp.pkg != null || cpu.temp.cores.length > 0)
-        case "usage": return cpu != null
+        case "cpu": return cpu != null
         case "mem": return mem != null
         case "gpu": return gpus.length > 0
         case "fans": return fans.length > 0
@@ -279,18 +346,31 @@ PluginComponent {
         return false
     }
 
-    function barShown(key) { return available(key) && opt(key + "Bar", key === "freq") }
-    function tabShown(key) { return available(key) && opt(key + "Tab", true) }
-    function barIconShown(key) { return opt(key + "Icon", true) }
+    function barShown(key) {
+        if (!available(key)) return false
+        return key === "cpu" ? optL("cpuBar", "freqBar", true) : opt(key + "Bar", false)
+    }
+    function tabShown(key) {
+        if (!available(key)) return false
+        return key === "cpu"
+            ? (optL("cpuTab", "freqTab", true) || opt("tempTab", true) || opt("usageTab", true))
+            : opt(key + "Tab", true)
+    }
+    function barIconShown(key) {
+        return key === "cpu" ? optL("cpuIcon", "freqIcon", true) : opt(key + "Icon", true)
+    }
 
     // optional divider between bar entries (see General settings)
     function barSep() { return opt("barSeparator", "none") }
 
     // which helper sections are worth collecting (nvidia-smi etc. only when needed)
     function sections() {
-        const need = k => opt(k + "Bar", k === "freq") || opt(k + "Tab", true)
+        const need = k => (k === "cpu"
+                ? (optL("cpuBar", "freqBar", true) || optL("cpuTab", "freqTab", true)
+                   || opt("tempTab", true) || opt("usageTab", true))
+                : (opt(k + "Bar", false) || opt(k + "Tab", true)))
         const s = []
-        if (need("freq") || need("temp") || need("usage") || need("bat")) s.push("cpu")
+        if (need("cpu") || need("bat")) s.push("cpu")
         if (need("mem")) s.push("mem")
         if (need("gpu")) s.push("gpu")
         if (need("fans")) s.push("fans")
@@ -581,11 +661,11 @@ PluginComponent {
     function diskPct(d) { return d && (d.used + d.avail) > 0 ? 100 * d.used / (d.used + d.avail) : 0 }
 
     // Values a bar entry can show; several can be on at once (see the settings).
-    // `legacy` is the old single-choice setting: until any of the new
-    // <key>BarShow<Value> toggles is touched, it keeps deciding, so an existing
-    // setup carries over unchanged. `primary` is the fresh-install default.
+    // Until any of the new <key>BarShow<Value> toggles is touched, the old
+    // single-choice settings keep deciding, so an existing setup carries over.
+    // `primary` is the fresh-install default.
     readonly property var barValueDefs: ({
-        freq: { legacy: ["freqMode", "avg"], primary: "avg", values: ["min", "avg", "max"] },
+        cpu: { primary: "avg", values: ["min", "avg", "max", "temp", "usage"] },
         mem: { legacy: ["memDisplay", "percent"], primary: "percent", values: ["percent", "used", "available", "free", "used_total"] },
         gpu: { legacy: ["gpuDisplay", "usage"], primary: "usage", values: ["usage", "temp", "vram", "power", "clock"] },
         disk: { legacy: ["diskDisplay", "percent"], primary: "percent", values: ["percent", "used", "free", "used_total"] },
@@ -594,40 +674,61 @@ PluginComponent {
 
     function barValuesOn(key) {
         const def = barValueDefs[key]
-        if (!def) return [key]              // temp, usage, fans: a single value
+        if (!def) return [key]              // fans: a single value
         let touched = false
         for (const k in (pluginData || {})) {
             if (k.indexOf(key + "BarShow") === 0) { touched = true; break }
         }
         const out = []
-        for (const v of def.values) {
-            const on = touched
-                ? opt(key + "BarShow" + cap(v), v === def.primary) === true
-                : opt(def.legacy[0], def.legacy[1]) === v
-            if (on) out.push(v)
+        if (!touched) {
+            if (key === "cpu") {
+                // migrate: what the old freq/temp/usage metrics showed in the bar
+                if (optL("cpuBar", "freqBar", true)) {
+                    let f = false
+                    for (const k in (pluginData || {})) {
+                        if (k.indexOf("freqBarShow") === 0) { f = true; break }
+                    }
+                    if (f) {
+                        for (const v of ["min", "avg", "max"])
+                            if (opt("freqBarShow" + cap(v), v === "avg") === true) out.push(v)
+                    } else out.push(opt("freqMode", "avg"))
+                }
+                if (opt("tempBar", false)) out.push("temp")
+                if (opt("usageBar", false)) out.push("usage")
+                return out.length ? out : [def.primary]
+            }
+            for (const v of def.values) {
+                if (opt(def.legacy[0], def.legacy[1]) === v) out.push(v)
+            }
+            return out.length ? out : [def.primary]
         }
-        return out.length ? out : (touched ? [] : [def.primary])
+        for (const v of def.values) {
+            if (opt(key + "BarShow" + cap(v), v === def.primary) === true) out.push(v)
+        }
+        return out
     }
 
     // [number, unit] for one value of one bar entry. Unit strings carry the
     // spacing used horizontally ("%"/"°C" hug the number, " GHz" does not).
     function barPartsFor(key, val) {
-        const u = x => opt(key + "ShowUnit", true) ? x : ""
-        if (key === "freq") {
+        const u = x => (key === "cpu"
+            ? optL("cpuShowUnit", "freqShowUnit", true)
+            : opt(key + "ShowUnit", true)) ? x : ""
+        if (key === "cpu") {
+            if (val === "temp") {
+                const mc = pkgTemp()
+                if (mc === null) return ["–", ""]
+                const c = mc / 1000
+                return opt("tempScale", "C") === "F"
+                    ? [String(Math.round(c * 9 / 5 + 32)), u("°F")]
+                    : [String(Math.round(c)), u("°C")]
+            }
+            if (val === "usage") return [String(Math.round(usageAll)), u("%")]
             const khz = panelFreq(val)
             if (khz === null) return ["–", ""]
             if (opt("freqScale", "GHz") === "MHz") return [String(Math.round(khz / 1000)), u(" MHz")]
             return [(khz / 1e6).toFixed(parseInt(opt("freqPrecision", "1"))), u(" GHz")]
         }
-        if (key === "temp") {
-            const mc = pkgTemp()
-            if (mc === null) return ["–", ""]
-            const c = mc / 1000
-            return opt("tempScale", "C") === "F"
-                ? [String(Math.round(c * 9 / 5 + 32)), u("°F")]
-                : [String(Math.round(c)), u("°C")]
-        }
-        if (key === "usage") return [String(Math.round(usageAll)), u("%")]
         if (key === "mem") {
             const sc = opt("memScale", "auto")
             if (val === "percent") return [String(Math.round(memPct())), u("%")]
@@ -1271,7 +1372,7 @@ PluginComponent {
         PopoutComponent {
             id: pop
 
-            property string tab: "freq"
+            property string tab: "cpu"
             readonly property string activeTab: {
                 for (const t of root.tabs) if (t.key === tab) return tab
                 return root.tabs.length ? root.tabs[0].key : ""
@@ -1336,18 +1437,47 @@ PluginComponent {
                         width: flick.width
                         spacing: Theme.spacingM
 
-                        // ================================== frequency ====
+                        // ======================================== CPU =====
                         Column {
-                            visible: pop.activeTab === "freq" && root.cpu != null
+                            visible: pop.activeTab === "cpu" && root.cpu != null
                             width: parent.width
                             spacing: Theme.spacingL
 
-                            HeroCard {
+                            // header: one compact card per reading
+                            Row {
+                                id: cpuHead
                                 width: parent.width
-                                icon: "speed"
-                                value: root.fmtFreq(root.panelFreq(), false)
-                                caption: root.modeLabel() + " frequency"
-                                progress: root.freqFraction(root.panelFreq())
+                                spacing: Theme.spacingM
+                                readonly property int cards:
+                                    (hFreq.visible ? 1 : 0) + (hTemp.visible ? 1 : 0) + (hUsage.visible ? 1 : 0)
+
+                                HeroStat {
+                                    id: hFreq
+                                    visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
+                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
+                                    icon: "speed"
+                                    value: root.fmtFreq(root.panelFreq(), false)
+                                    caption: root.modeLabel()
+                                    progress: root.freqFraction(root.panelFreq())
+                                }
+                                HeroStat {
+                                    id: hTemp
+                                    visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
+                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
+                                    icon: "thermostat"
+                                    value: root.fmtTemp(root.pkgTemp(), false)
+                                    caption: "Package"
+                                    progress: root.pkgTemp() === null ? -1 : root.clamp100(root.pkgTemp() / 1000)
+                                }
+                                HeroStat {
+                                    id: hUsage
+                                    visible: root.cpu != null
+                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
+                                    icon: "show_chart"
+                                    value: Math.round(root.usageAll) + "%"
+                                    caption: "Usage"
+                                    progress: root.usageAll
+                                }
                             }
 
                             SectionCard {
@@ -1467,30 +1597,14 @@ PluginComponent {
                                     }
                                 }
                             }
-                        }
-
-                        // ================================ temperature ====
-                        Column {
-                            visible: pop.activeTab === "temp" && root.cpu != null
-                            width: parent.width
-                            spacing: Theme.spacingL
-
-                            HeroCard {
-                                width: parent.width
-                                icon: "thermostat"
-                                value: root.fmtTemp(root.pkgTemp(), false)
-                                caption: "CPU package"
-                                         + (root.cpu && root.cpu.physicalCores > 0
-                                            ? " · " + root.cpu.physicalCores + " cores, " + root.cpu.threads + " threads"
-                                            : "")
-                                progress: root.pkgTemp() === null ? -1 : root.clamp100(root.pkgTemp() / 1000)
-                            }
 
                             SectionCard {
                                 visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
                                 title: "Physical cores"
                                 icon: "developer_board"
+                                caption: root.cpu && root.cpu.physicalCores > 0
+                                         ? root.cpu.physicalCores + " cores · " + root.cpu.threads + " threads" : ""
 
                                 Grid {
                                     id: tempGrid
@@ -1510,30 +1624,6 @@ PluginComponent {
                                         }
                                     }
                                 }
-                            }
-
-                            StyledText {
-                                visible: root.tempCoreList().length === 0
-                                width: parent.width
-                                text: "This CPU only reports a package temperature."
-                                wrapMode: Text.WordWrap
-                                font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.surfaceVariantText
-                            }
-                        }
-
-                        // ===================================== usage =====
-                        Column {
-                            visible: pop.activeTab === "usage" && root.cpu != null
-                            width: parent.width
-                            spacing: Theme.spacingL
-
-                            HeroCard {
-                                width: parent.width
-                                icon: "memory"
-                                value: Math.round(root.usageAll) + "%"
-                                caption: "CPU usage"
-                                progress: root.usageAll
                             }
 
                             SectionCard {
@@ -1559,6 +1649,15 @@ PluginComponent {
                                         }
                                     }
                                 }
+                            }
+
+                            StyledText {
+                                visible: root.tempCoreList().length === 0
+                                width: parent.width
+                                text: "This CPU only reports a package temperature."
+                                wrapMode: Text.WordWrap
+                                font.pixelSize: Theme.fontSizeSmall
+                                color: Theme.surfaceVariantText
                             }
                         }
 

@@ -40,9 +40,7 @@ PluginSettings {
         current: root.tab
         model: [
             { key: "general", label: "General", icon: "tune" },
-            { key: "freq", label: "Freq", icon: "speed" },
-            { key: "temp", label: "Temp", icon: "thermostat" },
-            { key: "usage", label: "Usage", icon: "memory" },
+            { key: "cpu", label: "CPU", icon: "developer_board" },
             { key: "mem", label: "RAM", icon: "developer_board" },
             { key: "gpu", label: "GPU", icon: "auto_awesome_mosaic" },
             { key: "fans", label: "Fans", icon: "mode_fan" },
@@ -94,38 +92,74 @@ PluginSettings {
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqBar"
+        visible: root.tab === "cpu"
+        settingKey: "cpuBar"
         label: "Show in bar"
         defaultValue: true
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqTab"
+        visible: root.tab === "cpu"
+        settingKey: "cpuTab"
         label: "Show tab in popout"
         defaultValue: true
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqIcon"
+        visible: root.tab === "cpu"
+        settingKey: "cpuIcon"
         label: "Show icon in bar"
         defaultValue: true
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqShowUnit"
+        visible: root.tab === "cpu"
+        settingKey: "cpuShowUnit"
         label: "Show unit in bar"
         defaultValue: true
     }
 
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuBarShowMin"
+        label: "Bar: frequency minimum"
+        description: "Several can be on at once; each value becomes its own bar item"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuBarShowAvg"
+        label: "Bar: frequency average"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuBarShowMax"
+        label: "Bar: frequency maximum"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuBarShowTemp"
+        label: "Bar: temperature"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuBarShowUsage"
+        label: "Bar: usage"
+        defaultValue: false
+    }
+
     SelectionSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqMode"
         label: "Summary value"
-        description: "Average, minimum or maximum: the popout hero, and the bar until you change the toggles below"
+        description: "Average, minimum or maximum frequency: the popout header card, and the bar until you change the toggles above"
         options: [
             { label: "Average", value: "avg" },
             { label: "Minimum", value: "min" },
@@ -134,30 +168,8 @@ PluginSettings {
         defaultValue: "avg"
     }
 
-    ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqBarShowMin"
-        label: "Bar: minimum"
-        description: "Several can be on at once; each value becomes its own bar item"
-        defaultValue: false
-    }
-
-    ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqBarShowAvg"
-        label: "Bar: average"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "freq"
-        settingKey: "freqBarShowMax"
-        label: "Bar: maximum"
-        defaultValue: false
-    }
-
     SelectionSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqScale"
         label: "Unit"
         options: [
@@ -168,7 +180,7 @@ PluginSettings {
     }
 
     SelectionSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqPrecision"
         label: "Decimal places (GHz)"
         options: [
@@ -180,67 +192,39 @@ PluginSettings {
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqShowMin"
         label: "Show minimum frequency limit"
         defaultValue: true
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqShowMax"
         label: "Show maximum frequency limit"
         defaultValue: true
     }
 
     ToggleSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqCores"
         label: "Show per-core frequencies"
         defaultValue: true
     }
 
     SelectionSetting {
-        visible: root.tab === "freq"
+        visible: root.tab === "cpu"
         settingKey: "freqColumns"
-        label: "Per-core grid columns"
+        label: "Frequency grid columns"
         description: "How many core frequencies share a row"
         options: root.columnOptions
         defaultValue: "2"
     }
 
-    ToggleSetting {
-        visible: root.tab === "temp"
-        settingKey: "tempBar"
-        label: "Show in bar"
-        defaultValue: false
-    }
-
-    ToggleSetting {
-        visible: root.tab === "temp"
-        settingKey: "tempTab"
-        label: "Show tab in popout"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "temp"
-        settingKey: "tempIcon"
-        label: "Show icon in bar"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "temp"
-        settingKey: "tempShowUnit"
-        label: "Show unit in bar"
-        defaultValue: true
-    }
-
     SelectionSetting {
-        visible: root.tab === "temp"
+        visible: root.tab === "cpu"
         settingKey: "tempScale"
-        label: "Unit"
+        label: "Temperature unit"
         options: [
             { label: "Celsius", value: "C" },
             { label: "Fahrenheit", value: "F" }
@@ -249,7 +233,7 @@ PluginSettings {
     }
 
     ToggleSetting {
-        visible: root.tab === "temp"
+        visible: root.tab === "cpu"
         settingKey: "tempCores"
         label: "Show per-core temperatures"
         description: "One sensor per physical core; hidden automatically if the CPU reports only a package sensor"
@@ -257,46 +241,18 @@ PluginSettings {
     }
 
     SelectionSetting {
-        visible: root.tab === "temp"
+        visible: root.tab === "cpu"
         settingKey: "tempColumns"
-        label: "Per-core grid columns"
+        label: "Temperature grid columns"
         description: "How many core readings share a row"
         options: root.columnOptions
         defaultValue: "3"
     }
 
-    ToggleSetting {
-        visible: root.tab === "usage"
-        settingKey: "usageBar"
-        label: "Show in bar"
-        defaultValue: false
-    }
-
-    ToggleSetting {
-        visible: root.tab === "usage"
-        settingKey: "usageTab"
-        label: "Show tab in popout"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "usage"
-        settingKey: "usageIcon"
-        label: "Show icon in bar"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "usage"
-        settingKey: "usageShowUnit"
-        label: "Show unit in bar"
-        defaultValue: true
-    }
-
     SelectionSetting {
-        visible: root.tab === "usage"
+        visible: root.tab === "cpu"
         settingKey: "usageColumns"
-        label: "Per-core grid columns"
+        label: "Usage grid columns"
         description: "How many core usage readings share a row"
         options: root.columnOptions
         defaultValue: "2"

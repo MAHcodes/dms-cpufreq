@@ -25,10 +25,9 @@ entry (GPU usage + temperature reads `▤ 45% · ▤ 65°C`). In vertical bars t
 the number in a smaller font, and `/`-joined numbers (`used/total`) split over lines (`12.1`
 over `/16.0`) so they fit. Formatting rules:
 
-* Frequency: any mix of min/avg/max over all logical cores, each its own item (GHz has
-  configurable decimals, MHz is rounded).
-* Temperature: package sensor, °C or °F.
-* Usage/RAM/Disk/battery percent: rounded integer with `%`.
+* CPU: any mix of min/avg/max frequency over all logical cores (GHz has configurable decimals,
+  MHz is rounded), package temperature (°C or °F) and total usage; each value its own item.
+* RAM/Disk/battery percent: rounded integer with `%`.
 * Byte values (RAM, disk, GPU VRAM): one decimal below 100, none above; unit auto-picks TiB/GiB/MiB
   (or a fixed GiB/MiB/GB per setting). Pairs render as `used/total`.
 * Battery: any mix of charge %, time to empty/limit as `h:mm`, power draw `12.3 W`, energy `45.6 Wh`.
@@ -37,37 +36,30 @@ over `/16.0`) so they fit. Formatting rules:
 Every bar item shows its metric's icon, so all of a metric's values share one icon; the battery
 icon follows charge level and charging state. Icons are toggled per metric with *show icon in bar*.
 
-## Frequency tab
+## CPU tab
+
+One tab for the whole processor — frequency, temperature and usage used to be separate tabs.
+A header row holds one compact card per reading, followed by a section per group.
 
 | Stat | Meaning | Source | Notes |
 |---|---|---|---|
-| Hero: frequency | The avg/min/max (per setting) current clock of all logical cores | `scaling_cur_freq` per CPU, kHz | Progress bar = position between hardware min and max. The caption says which of the three you are seeing. |
+| Header: frequency | The avg/min/max (per the summary setting) current clock of all logical cores | `scaling_cur_freq` per CPU, kHz | Card caption says which of the three; progress = position between hardware min and max. |
+| Header: temperature | CPU package temperature | hwmon `coretemp`/`k10temp`/`zenpower`/`cpu_thermal` `temp*_input` | Prefers a `Package id`/`Tctl`/`Tdie` label; falls back to the first unlabeled sensor, then to the hottest core. °C or °F out. |
+| Header: usage | Busy share of all cores since the previous poll | `/proc/stat` `cpu` line | `100 × (Δtotal − Δidle)/Δtotal`, idle includes iowait. Needs two polls, so the very first reading is 0%. |
 | Turbo boost | Whether turbo/boost frequencies are allowed | `intel_pstate/no_turbo` (inverted) or `cpufreq/boost` | On intel_pstate with turbo off, the *effective* max is the base frequency, and the slider max follows it. |
 | Profile | Which preset matches live sysfs: saver / balanced / performance, or none (custom) | derived | Presets set governor + EPP + turbo + `min=hw max=hw` in one `apply`. Anything you change afterwards makes it "custom" (no segment highlighted). |
 | Governor | Kernel cpufreq governor for all policies | `scaling_available_governors`, applied to every policy | Written to all `policy*/scaling_governor` at once. |
 | Energy preference | Intel HWP energy/performance hint (EPP) | `energy_performance_available_preferences` | Only present when the driver exposes it (intel_pstate/amd-pstate with HWP). Some governors refuse an EPP write; that failure is non-fatal. |
 | Minimum / Maximum | Scaling limits shared by all cores | `scaling_min_freq` / `scaling_max_freq` | Sliders step 100 MHz, clamped to hardware limits. Dragging min above max (or vice versa) moves both bounds so the kernel never sees a crossed pair. |
 | Per-core frequency | Current clock of each logical core | `scaling_cur_freq` | Grid columns 1–6 in the settings. Mini bar = fraction of the hw min–max range. |
+| Physical cores | One temperature sensor per physical core | same hwmon, labels `Core N` | Sensors are per physical core: a 6c/12t CPU reports 6 readings, not 12. The card caption shows the core/thread counts. |
+| Per-core usage | Same formula as the usage header, per logical CPU | `/proc/stat` `cpuN` lines | A core that appeared since the last poll reads 0 until it has a delta. |
 
 `hwMin`/`hwMax` used above are `cpuinfo_min_freq`/`cpuinfo_max_freq` — the hardware range the
 driver reports, which is what sliders and progress bars are scaled against.
 
-## Temperature tab
-
-| Stat | Meaning | Source | Notes |
-|---|---|---|---|
-| Hero: package | CPU package temperature | hwmon `coretemp`/`k10temp`/`zenpower`/`cpu_thermal` `temp*_input` | Prefers a `Package id`/`Tctl`/`Tdie` label; falls back to the first unlabeled sensor, then to the hottest core. millidegree input; °C or °F out. |
-| Physical cores | One sensor per physical core | same hwmon, labels `Core N` | Sensors are per physical core: a 6c/12t CPU reports 6 readings, not 12. The hero caption shows the core/thread counts. |
-
-Only CPUs that label sensors `Core N` (coretemp) get the grid; the tab says so when there is
-just a package sensor.
-
-## Usage tab
-
-| Stat | Meaning | Source | Notes |
-|---|---|---|---|
-| Hero: CPU usage | Busy share of all cores since the previous poll | `/proc/stat` `cpu` line | `100 × (Δtotal − Δidle)/Δtotal`, where idle includes iowait. Needs two polls, so the very first reading is 0%. |
-| Per-core usage | Same formula per logical CPU | `/proc/stat` `cpuN` lines | A core that appeared since the last poll reads 0 until it has a delta. |
+Only CPUs that label sensors `Core N` (coretemp) get the temperature grid; a note at the bottom
+of the tab says so when there is just a package sensor.
 
 ## RAM tab
 
