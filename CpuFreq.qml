@@ -96,7 +96,8 @@ PluginComponent {
     }
 
     // Material 3 filled section card: an optional small header over a padded
-    // body column. Children of a `SectionCard { ... }` land in that body.
+    // body column. Clicking the header collapses the body (session state, not
+    // persisted). Children of a `SectionCard { ... }` land in that body.
     component SectionCard: StyledRect {
         id: card
 
@@ -104,6 +105,7 @@ PluginComponent {
         property string icon: ""
         property string caption: ""
         property real bodySpacing: Theme.spacingXS
+        property bool expanded: true
 
         default property alias content: body.data
 
@@ -112,6 +114,8 @@ PluginComponent {
         radius: Theme.cornerRadiusL
         color: Theme.surfaceContainer
 
+        Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
         Column {
             id: layout
             x: Theme.spacingM
@@ -119,30 +123,52 @@ PluginComponent {
             width: card.width - Theme.spacingM * 2
             spacing: Theme.spacingS
 
-            Row {
+            Item {
                 visible: card.title !== "" || card.icon !== ""
                 width: parent.width
-                spacing: Theme.spacingS
+                height: headRow.implicitHeight
+
+                Row {
+                    id: headRow
+                    spacing: Theme.spacingS
+
+                    DankIcon {
+                        visible: card.icon !== ""
+                        name: card.icon
+                        size: Theme.iconSize - 8
+                        color: Theme.primary
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        visible: card.title !== ""
+                        text: card.title
+                        font.pixelSize: Theme.fontSizeSmall
+                        font.weight: Font.Bold
+                        color: Theme.surfaceVariantText
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
 
                 DankIcon {
-                    visible: card.icon !== ""
-                    name: card.icon
-                    size: Theme.iconSize - 8
-                    color: Theme.primary
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                StyledText {
                     visible: card.title !== ""
-                    text: card.title
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.Bold
-                    color: Theme.surfaceVariantText
+                    anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
+                    name: "expand_more"
+                    size: Theme.iconSize - 10
+                    color: Theme.surfaceVariantText
+                    rotation: card.expanded ? 0 : -90
+                    Behavior on rotation { NumberAnimation { duration: 150 } }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: if (card.title !== "") card.expanded = !card.expanded
                 }
             }
 
             StyledText {
-                visible: card.caption !== ""
+                visible: card.caption !== "" && card.expanded
                 width: parent.width
                 text: card.caption
                 wrapMode: Text.WordWrap
@@ -152,6 +178,7 @@ PluginComponent {
 
             Column {
                 id: body
+                visible: card.expanded
                 width: parent.width
                 spacing: card.bodySpacing
             }
