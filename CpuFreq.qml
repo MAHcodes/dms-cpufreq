@@ -1466,7 +1466,6 @@ PluginComponent {
                                     FieldLabel {
                                         text: "Profile"
                                         icon: "tune"
-                                        sub: "One tap sets governor, EPP, turbo and limits"
                                     }
                                     SegmentedControl {
                                         width: parent.width
