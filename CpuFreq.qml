@@ -1312,8 +1312,8 @@ PluginComponent {
     }
 
     // ========================================================== popout =====
-    popoutWidth: 580
-    popoutHeight: 760
+    popoutWidth: 600
+    popoutHeight: 800
 
     popoutContent: Component {
         PopoutComponent {
@@ -1417,6 +1417,50 @@ PluginComponent {
                                     onToggled: value => root.setTurbo(value)
                                 }
 
+                                // frequency limits: titled group right under turbo
+                                Column {
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
+                                    width: parent.width
+                                    spacing: Theme.spacingXS
+
+                                    FieldLabel {
+                                        text: "Frequency limits"
+                                        icon: "swap_vert"
+                                        sub: "Shared by all cores, in steps of 100 MHz"
+                                    }
+                                }
+
+                                SliderRow {
+                                    id: minRow
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && root.opt("freqShowMin", true)
+                                    width: parent.width
+                                    icon: "vertical_align_bottom"
+                                    label: "Minimum"
+                                    valueText: root.fmtFreq(minRow.shown, false)
+                                    from: root.cpu ? root.cpu.hwMin : 0
+                                    to: root.cpu ? root.cpu.hwMax : 1
+                                    step: 100000
+                                    value: root.cpu ? root.cpu.scalingMin : 0
+                                    onReleased: newValue => root.setMin(newValue)
+                                }
+
+                                SliderRow {
+                                    id: maxRow
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && root.opt("freqShowMax", true)
+                                    width: parent.width
+                                    icon: "vertical_align_top"
+                                    label: "Maximum"
+                                    valueText: root.fmtFreq(maxRow.shown, false)
+                                    from: root.cpu ? root.cpu.hwMin : 0
+                                    to: root.cpu ? root.cpu.hwMax : 1
+                                    step: 100000
+                                    value: root.cpu ? Math.min(root.cpu.scalingMax, root.cpu.hwMax) : 0
+                                    onReleased: newValue => root.setMax(newValue)
+                                }
+
                                 Column {
                                     visible: root.opt("cpuShowPerformance", true)
                                     width: parent.width
@@ -1462,59 +1506,6 @@ PluginComponent {
                                         current: root.cpu ? root.cpu.epp : ""
                                         onSelected: value => root.setEpp(value)
                                     }
-                                }
-
-                                // frequency limits: titled group of its own inside the card
-                                Rectangle {
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
-                                    width: parent.width
-                                    height: 1
-                                    color: Theme.outlineStrong
-                                    opacity: 0.4
-                                }
-
-                                Column {
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
-                                    width: parent.width
-                                    spacing: Theme.spacingXS
-
-                                    FieldLabel {
-                                        text: "Frequency limits"
-                                        icon: "swap_vert"
-                                        sub: "Shared by all cores, in steps of 100 MHz"
-                                    }
-                                }
-
-                                SliderRow {
-                                    id: minRow
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && root.opt("freqShowMin", true)
-                                    width: parent.width
-                                    icon: "vertical_align_bottom"
-                                    label: "Minimum"
-                                    valueText: root.fmtFreq(minRow.shown, false)
-                                    from: root.cpu ? root.cpu.hwMin : 0
-                                    to: root.cpu ? root.cpu.hwMax : 1
-                                    step: 100000
-                                    value: root.cpu ? root.cpu.scalingMin : 0
-                                    onReleased: newValue => root.setMin(newValue)
-                                }
-
-                                SliderRow {
-                                    id: maxRow
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && root.opt("freqShowMax", true)
-                                    width: parent.width
-                                    icon: "vertical_align_top"
-                                    label: "Maximum"
-                                    valueText: root.fmtFreq(maxRow.shown, false)
-                                    from: root.cpu ? root.cpu.hwMin : 0
-                                    to: root.cpu ? root.cpu.hwMax : 1
-                                    step: 100000
-                                    value: root.cpu ? Math.min(root.cpu.scalingMax, root.cpu.hwMax) : 0
-                                    onReleased: newValue => root.setMax(newValue)
                                 }
                             }
 
