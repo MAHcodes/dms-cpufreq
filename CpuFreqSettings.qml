@@ -138,7 +138,7 @@ PluginSettings {
         visible: root.tab === "freq"
         settingKey: "freqBarShowMin"
         label: "Bar: minimum"
-        description: "Several can be on at once; same-unit values join into 0.55/3.42/4.10 GHz"
+        description: "Several can be on at once; each value becomes its own bar item with its own icon"
         defaultValue: false
     }
 
@@ -334,7 +334,7 @@ PluginSettings {
         visible: root.tab === "mem"
         settingKey: "memBarShowPercent"
         label: "Bar: percent used"
-        description: "Several can be on at once; the bar joins the values with spaces"
+        description: "Several can be on at once; each value becomes its own bar item with its own icon"
         defaultValue: true
     }
 
@@ -410,7 +410,7 @@ PluginSettings {
         visible: root.tab === "gpu"
         settingKey: "gpuBarShowUsage"
         label: "Bar: usage"
-        description: "Several can be on at once; the bar joins the values with spaces"
+        description: "Several can be on at once; each value becomes its own bar item with its own icon"
         defaultValue: true
     }
 
@@ -591,7 +591,7 @@ PluginSettings {
         visible: root.tab === "disk"
         settingKey: "diskBarShowPercent"
         label: "Bar: percent used"
-        description: "Several can be on at once; the bar joins the values with spaces"
+        description: "Several can be on at once; each value becomes its own bar item with its own icon"
         defaultValue: true
     }
 
@@ -670,7 +670,7 @@ PluginSettings {
         visible: root.tab === "bat"
         settingKey: "batBarShowPercent"
         label: "Bar: charge"
-        description: "Several can be on at once; the bar joins the values with spaces. Several batteries are combined into one reading"
+        description: "Several can be on at once; each value becomes its own bar item with its own icon. Several batteries are combined into one reading"
         defaultValue: true
     }
 

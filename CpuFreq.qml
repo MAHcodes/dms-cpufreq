@@ -286,9 +286,19 @@ PluginComponent {
     // optional divider between bar entries (see General settings)
     function barSep() { return opt("barSeparator", "none") }
 
-    function firstBarKey() {
-        for (const k of metricKeys) if (barShown(k)) return k
-        return ""
+    // Per-value bar icons (used by barItems); "" falls back to the metric's
+    // own icon (battery charge keeps its dynamic icon that way).
+    readonly property var barValueIcons: ({
+        freq: { min: "vertical_align_bottom", avg: "speed", max: "vertical_align_top" },
+        mem: { percent: "memory", used: "inventory_2", available: "check_circle", free: "cloud", used_total: "developer_board" },
+        gpu: { usage: "show_chart", temp: "thermostat", vram: "memory", power: "bolt", clock: "speed" },
+        disk: { percent: "storage", used: "hard_drive", free: "cloud", used_total: "developer_board" },
+        bat: { percent: "", time: "schedule", power: "bolt", energy: "battery_charging_full" }
+    })
+
+    function barItemIcon(key, val) {
+        const m = barValueIcons[key]
+        return (m && m[val]) || metricIcon(key)
     }
 
     // which helper sections are worth collecting (nvidia-smi etc. only when needed)
@@ -687,20 +697,22 @@ PluginComponent {
         return ["", ""]
     }
 
-    // parts for every enabled value of one bar entry. Same-unit frequency
-    // values collapse into one pair, so avg + max reads "3.42/4.10 GHz".
-    function barValueParts(key) {
+    // Every bar item: one per (metric × shown value), each with its own icon,
+    // so a multi-value metric reads as separate entries. `used/total` stays one
+    // item because it is one value.
+    function barItems() {
         const out = []
-        for (const v of barValuesOn(key)) out.push(barPartsFor(key, v))
-        if (key === "freq" && out.length > 1 && out.every(p => p[1] === out[0][1]))
-            return [[out.map(p => p[0]).join("/"), out[0][1]]]
+        for (const key of metricKeys) {
+            if (!barShown(key)) continue
+            for (const v of barValuesOn(key)) {
+                const p = barPartsFor(key, v)
+                out.push({ key: key, icon: barItemIcon(key, v), num: p[0], unit: p[1] })
+            }
+        }
         return out
     }
 
-    // text for one bar entry; `bare` (vertical bar) is the number without its unit
-    function barText(key, bare) {
-        return barValueParts(key).map(p => bare ? p[0] : p[0] + p[1]).join(" ")
-    }
+    readonly property var barItemsList: barItems()
 
     function pct(a, b) {
         const dt = b[0] - a[0]
@@ -1118,7 +1130,7 @@ PluginComponent {
             spacing: 0
 
             StyledText {
-                visible: root.firstBarKey() === ""
+                visible: root.barItemsList.length === 0
                 text: root.snap ? "–" : "…"
                 font.pixelSize: root.barFontSize
                 color: root.barTextColor
@@ -1126,23 +1138,20 @@ PluginComponent {
             }
 
             Repeater {
-                model: root.metricKeys
+                model: root.barItemsList
 
                 delegate: Row {
-                    readonly property bool sep: root.firstBarKey() !== modelData
-
                     spacing: 0
-                    visible: root.barShown(modelData)
 
                     StyledText {
-                        visible: sep && root.barSep() === "none"
+                        visible: index > 0 && root.barSep() === "none"
                         text: "\u00A0\u00A0"
                         font.pixelSize: root.barFontSize
                         color: root.barTextColor
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     StyledText {
-                        visible: sep && root.barSep() === "dot"
+                        visible: index > 0 && root.barSep() === "dot"
                         text: "\u00A0\u00B7\u00A0"
                         font.pixelSize: root.barFontSize
                         color: root.barTextColor
@@ -1150,7 +1159,7 @@ PluginComponent {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Item {
-                        visible: sep && root.barSep() === "line"
+                        visible: index > 0 && root.barSep() === "line"
                         width: root.barFontSize
                         height: 1
                         anchors.verticalCenter: parent.verticalCenter
@@ -1169,14 +1178,14 @@ PluginComponent {
                         anchors.verticalCenter: parent.verticalCenter
 
                         DankIcon {
-                            visible: root.barIconShown(modelData)
-                            name: root.metricIcon(modelData)
+                            visible: root.barIconShown(modelData.key)
+                            name: modelData.icon
                             size: root.barIconSize
                             color: Theme.primary
                             anchors.verticalCenter: parent.verticalCenter
                         }
                         StyledText {
-                            text: root.barText(modelData, false)
+                            text: modelData.num + modelData.unit
                             font.pixelSize: root.barFontSize
                             color: root.barTextColor
                             anchors.verticalCenter: parent.verticalCenter
@@ -1192,7 +1201,7 @@ PluginComponent {
             spacing: Theme.spacingS
 
             StyledText {
-                visible: root.firstBarKey() === ""
+                visible: root.barItemsList.length === 0
                 text: root.snap ? "–" : "…"
                 font.pixelSize: root.barFontSize
                 color: root.barTextColor
@@ -1200,20 +1209,16 @@ PluginComponent {
             }
 
             Repeater {
-                model: root.metricKeys
+                model: root.barItemsList
 
                 delegate: Column {
-                    id: entry
-                    readonly property string mkey: modelData
-                    readonly property var values: root.barValueParts(mkey)
-                    readonly property bool sep: root.firstBarKey() !== mkey
+                    readonly property var nums: modelData.num.split("/")
 
                     spacing: Theme.spacingXS
-                    visible: root.barShown(mkey)
                     anchors.horizontalCenter: parent.horizontalCenter
 
                     StyledText {
-                        visible: entry.sep && root.barSep() === "dot"
+                        visible: index > 0 && root.barSep() === "dot"
                         text: "\u00B7"
                         font.pixelSize: Math.max(9, root.barFontSize - 4)
                         color: root.barTextColor
@@ -1221,7 +1226,7 @@ PluginComponent {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Rectangle {
-                        visible: entry.sep && root.barSep() === "line"
+                        visible: index > 0 && root.barSep() === "line"
                         width: Math.round(root.barFontSize * 1.5)
                         height: 1
                         color: root.barTextColor
@@ -1230,45 +1235,35 @@ PluginComponent {
                     }
 
                     DankIcon {
-                        visible: root.barIconShown(entry.mkey)
-                        name: root.metricIcon(entry.mkey)
+                        visible: root.barIconShown(modelData.key)
+                        name: modelData.icon
                         size: root.barIconSize
                         color: Theme.primary
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
-
-                    // one block per shown value; a "/" in the number (used/total,
-                    // freq min/avg/max) splits over lines to fit the narrow bar
+                    StyledText {
+                        text: nums[0]
+                        font.pixelSize: root.barFontSize
+                        color: root.barTextColor
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    // a "/" in the number (used/total) splits over lines to fit
                     Repeater {
-                        model: entry.values
+                        model: nums.length - 1
 
-                        Column {
-                            readonly property var nums: modelData[0].split("/")
-
-                            StyledText {
-                                text: nums[0]
-                                font.pixelSize: root.barFontSize
-                                color: root.barTextColor
-                                anchors.horizontalCenter: parent.horizontalCenter
-                            }
-                            Repeater {
-                                model: nums.length - 1
-
-                                StyledText {
-                                    text: "/" + nums[index + 1]
-                                    font.pixelSize: Math.max(9, root.barFontSize - 4)
-                                    color: root.barTextColor
-                                    anchors.horizontalCenter: parent.horizontalCenter
-                                }
-                            }
-                            StyledText {
-                                visible: modelData[1] !== ""
-                                text: modelData[1].trim()
-                                font.pixelSize: Math.max(9, root.barFontSize - 4)
-                                color: root.barTextColor
-                                anchors.horizontalCenter: parent.horizontalCenter
-                            }
+                        StyledText {
+                            text: "/" + nums[index + 1]
+                            font.pixelSize: Math.max(9, root.barFontSize - 4)
+                            color: root.barTextColor
+                            anchors.horizontalCenter: parent.horizontalCenter
                         }
+                    }
+                    StyledText {
+                        visible: modelData.unit !== ""
+                        text: modelData.unit.trim()
+                        font.pixelSize: Math.max(9, root.barFontSize - 4)
+                        color: root.barTextColor
+                        anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
             }

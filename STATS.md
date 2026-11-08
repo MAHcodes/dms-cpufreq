@@ -20,12 +20,13 @@ as "powered down" and never queried, so reading stats never wakes it.
 
 One entry per metric with *show in bar* on, separated by two spaces (a dot or line separator is
 optional, General settings). Each metric can show several of its values at once — any mix of its
-"Bar: …" toggles, joined with spaces (e.g. `45% 65°C` for GPU usage + temperature). In vertical
-bars the unit stacks under the number in a smaller font, and `/`-joined numbers (`used/total`,
-freq min/avg/max) split over lines (`12.1` over `/16.0`) so they fit. Formatting rules:
+"Bar: …" toggles, and each value is its own item with its own icon, separated like any other
+entry (GPU usage + temperature reads `▤ 45% · ◎ 65°C`). In vertical bars the unit stacks under
+the number in a smaller font, and `/`-joined numbers (`used/total`) split over lines (`12.1`
+over `/16.0`) so they fit. Formatting rules:
 
-* Frequency: any mix of min/avg/max over all logical cores; same-unit values slash-join into
-  `0.55/3.42/4.10 GHz` (GHz has configurable decimals, MHz is rounded).
+* Frequency: any mix of min/avg/max over all logical cores, each its own item (GHz has
+  configurable decimals, MHz is rounded).
 * Temperature: package sensor, °C or °F.
 * Usage/RAM/Disk/battery percent: rounded integer with `%`.
 * Byte values (RAM, disk, GPU VRAM): one decimal below 100, none above; unit auto-picks TiB/GiB/MiB
@@ -33,8 +34,9 @@ freq min/avg/max) split over lines (`12.1` over `/16.0`) so they fit. Formatting
 * Battery: any mix of charge %, time to empty/limit as `h:mm`, power draw `12.3 W`, energy `45.6 Wh`.
 * GPU: any mix of usage %, temp, VRAM used %, power draw `123.4 W`, graphics clock in MHz.
 
-The battery icon follows charge level and charging state; every other metric has a fixed icon
-(toggle with *show icon in bar*).
+Every bar item has its own icon, one per value (min/avg/max frequency get the down/flash/up
+arrows, GPU gets one per value type, and so on); the battery charge icon follows charge level and
+charging state. Icons are toggled per metric with *show icon in bar*.
 
 ## Frequency tab
 

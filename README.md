@@ -158,5 +158,4 @@ plugins.
 * NixOS: `install.sh` does not apply; package the helper and policy declaratively.
 * The vertical bar stacks each entry's unit under its number (smaller font, when *show unit in bar*
   is on) and separates entries with spacing instead of two spaces. The optional separator applies
-  in both orientations. Wide `/`-joined numbers (`used/total`, freq min/avg/max) split over lines
-  so they fit.
+  in both orientations. Wide `/`-joined numbers (`used/total`) split over lines so they fit.
