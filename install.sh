@@ -62,9 +62,3 @@ Battery tab: charge limits work on supported laptops with or without TLP.
 TLP profiles and tuning need TLP (https://linrunner.de/tlp); re-run this
 installer after updating the plugin so the helper is replaced too.
 MSG
-
-# pick up the new files in an already-running shell (no-op on first install)
-if command -v dms >/dev/null 2>&1; then
-    echo "==> dms ipc call plugins reload cpuFreq"
-    dms ipc call plugins reload cpuFreq || echo "    (not loaded yet - it loads when DMS starts)"
-fi
