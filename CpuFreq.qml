@@ -128,7 +128,9 @@ PluginComponent {
         property string caption: ""
         property real bodySpacing: Theme.spacingXS
         property string key: ""        // stable id; keyed cards remember their collapse state
-        property string group: ""      // set when the hero card above toggles this whole section
+        property string group: ""      // hero card key: hiding the group removes these cards entirely
+        property bool show: true        // whether the section applies at all (settings / data)
+        visible: show && root.collapsed[group] !== true
         property bool expanded: root.collapsed[group] === true
                                 ? false
                                 : key !== "" ? root.collapsed[key] !== true : true
@@ -1481,7 +1483,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.opt("cpuShowPerformance", true)
+                                show: root.opt("cpuShowPerformance", true)
                                          || root.opt("freqShowMin", true) || root.opt("freqShowMax", true)
                                 width: parent.width
                                 key: "cpu:performance"
@@ -1587,7 +1589,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.cores.length > 0 && root.opt("freqCores", true)
+                                show: root.cores.length > 0 && root.opt("freqCores", true)
                                 width: parent.width
                                 key: "cpu:freqCores"
                                 group: "g:cpuFreq"
@@ -1628,7 +1630,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
+                                show: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
                                 key: "cpu:tempCores"
                                 group: "g:cpuTemp"
@@ -1666,7 +1668,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.cores.length > 0 && root.opt("usageCores", true)
+                                show: root.cores.length > 0 && root.opt("usageCores", true)
                                 width: parent.width
                                 key: "cpu:usageCores"
                                 group: "g:cpuUsage"
@@ -1775,7 +1777,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.mem != null && (root.mem.swapTotal > 0 || root.mem.zramTotal > 0)
+                                show: root.mem != null && (root.mem.swapTotal > 0 || root.mem.zramTotal > 0)
                                 width: parent.width
                                 key: "mem:swap"
                                 group: "g:mem"
@@ -1832,7 +1834,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Util")
+                                        show: gpuCol.g != null && root.gpuShow("Util")
                                                  && (gpuCol.g.usage != null || gpuCol.g.usageMem != null
                                                      || gpuCol.g.usageEnc != null || gpuCol.g.usageDec != null)
                                         width: parent.width
@@ -1874,7 +1876,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Mem")
+                                        show: gpuCol.g != null && root.gpuShow("Mem")
                                                  && gpuCol.g.vramTotal != null && gpuCol.g.vramTotal > 0
                                         width: parent.width
                                         key: "gpu" + index + ":mem"
@@ -1906,7 +1908,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Thermals")
+                                        show: gpuCol.g != null && root.gpuShow("Thermals")
                                                  && !!(gpuCol.g.temp != null || gpuCol.g.tempMem != null
                                                       || gpuCol.g.tempLimit != null || gpuCol.g.fanRpm != null
                                                       || gpuCol.g.fanPct != null || gpuCol.g.throttle)
@@ -1957,7 +1959,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Power")
+                                        show: gpuCol.g != null && root.gpuShow("Power")
                                                  && (gpuCol.g.powerW != null || root.gpuPowerLimits(gpuCol.g) !== "")
                                         width: parent.width
                                         key: "gpu" + index + ":power"
@@ -1982,7 +1984,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Clocks")
+                                        show: gpuCol.g != null && root.gpuShow("Clocks")
                                                  && !!(gpuCol.g.freq != null || gpuCol.g.freqMem != null
                                                       || gpuCol.g.freqSm != null || gpuCol.g.freqVideo != null
                                                       || gpuCol.g.pstate)
@@ -2030,7 +2032,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Bus")
+                                        show: gpuCol.g != null && root.gpuShow("Bus")
                                                  && !!(gpuCol.g.pcieGen != null || gpuCol.g.vbios
                                                       || gpuCol.g.persistence || gpuCol.g.computeMode
                                                       || gpuCol.g.uuid || gpuCol.g.serial)
@@ -2093,7 +2095,7 @@ PluginComponent {
                                     }
 
                                     SectionCard {
-                                        visible: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
+                                        show: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
                                         width: parent.width
                                         key: "gpu" + index + ":procs"
                                         group: "g:gpu" + index
@@ -2384,7 +2386,7 @@ PluginComponent {
                                         spacing: Theme.spacingL
 
                                         SectionCard {
-                                            visible: chg.b !== null && chg.b.hasStop === true
+                                            show: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
                                             key: "bat" + index + ":charge"
                                             group: "g:bat"
@@ -2434,7 +2436,7 @@ PluginComponent {
                                         }
 
                                         SectionCard {
-                                            visible: chg.b !== null && chg.b.hasStop === true
+                                            show: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
                                             key: "bat" + index + ":now"
                                             group: "g:bat"
@@ -2474,7 +2476,7 @@ PluginComponent {
                                         }
 
                                         SectionCard {
-                                            visible: chg.b !== null && chg.b.behaviours.length > 1
+                                            show: chg.b !== null && chg.b.behaviours.length > 1
                                             width: parent.width
                                             key: "bat" + index + ":behaviour"
                                             group: "g:bat"
@@ -2491,7 +2493,7 @@ PluginComponent {
                                         }
 
                                         SectionCard {
-                                            visible: root.tlpHasFeature("recalibration") && chg.b !== null
+                                            show: root.tlpHasFeature("recalibration") && chg.b !== null
                                             width: parent.width
                                             key: "bat" + index + ":maint"
                                             group: "g:bat"
@@ -2562,7 +2564,7 @@ PluginComponent {
                                 }
 
                                 SectionCard {
-                                    visible: root.tlpInstalled
+                                    show: root.tlpInstalled
                                     width: parent.width
                                     key: "bat:profile"
                                     group: "g:bat"
@@ -2586,7 +2588,7 @@ PluginComponent {
                                     delegate: SectionCard {
                                         id: grp
                                         readonly property var items: root.tlpItems(modelData, pop.tuneProfile)
-                                        visible: items.length > 0
+                                        show: items.length > 0
                                         width: parent.width
                                         key: "bat:tlp" + index
                                         group: "g:bat"
@@ -2620,7 +2622,7 @@ PluginComponent {
                                 }
 
                                 SectionCard {
-                                    visible: root.tlpInstalled
+                                    show: root.tlpInstalled
                                     width: parent.width
                                     key: "bat:where"
                                     group: "g:bat"
