@@ -105,7 +105,8 @@ PluginComponent {
         property string icon: ""
         property string caption: ""
         property real bodySpacing: Theme.spacingXS
-        property bool expanded: true
+        property string key: ""        // stable id; keyed cards remember their collapse state
+        property bool expanded: key !== "" ? root.collapsed[key] !== true : true
 
         default property alias content: body.data
 
@@ -163,7 +164,10 @@ PluginComponent {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: if (card.title !== "") card.expanded = !card.expanded
+                    onClicked: {
+                        if (card.key !== "") root.toggleCollapsed(card.key)
+                        else card.expanded = !card.expanded
+                    }
                 }
             }
 
@@ -943,6 +947,27 @@ PluginComponent {
     }
 
     // ================================================ persistence/restore ==
+    // cards the user collapsed (by key); survives popout opens and reboots
+    property var collapsed: loadCollapsed()
+
+    function loadCollapsed() {
+        try {
+            const raw = pluginService ? pluginService.loadPluginState(pluginId, "collapsed", "{}") : "{}"
+            const o = typeof raw === "string" ? JSON.parse(raw) : (raw || {})
+            return o && typeof o === "object" ? o : {}
+        } catch (e) {
+            return {}
+        }
+    }
+
+    function toggleCollapsed(key) {
+        const c = ({})
+        for (const k in collapsed) if (k !== key) c[k] = collapsed[k]
+        if (!collapsed[key]) c[key] = true
+        collapsed = c
+        pluginService?.savePluginState(pluginId, "collapsed", JSON.stringify(c))
+    }
+
     function loadSaved() {
         try {
             const raw = pluginService ? pluginService.loadPluginState(pluginId, "saved", "{}") : "{}"
@@ -1432,6 +1457,7 @@ PluginComponent {
                                 visible: root.opt("cpuShowPerformance", true)
                                          || root.opt("freqShowMin", true) || root.opt("freqShowMax", true)
                                 width: parent.width
+                                key: "cpu:performance"
                                 title: "Performance"
                                 icon: "tune"
                                 bodySpacing: Theme.spacingS
@@ -1535,6 +1561,7 @@ PluginComponent {
                             SectionCard {
                                 visible: root.cores.length > 0 && root.opt("freqCores", true)
                                 width: parent.width
+                                key: "cpu:freqCores"
                                 title: "Per-core frequency"
                                 icon: root.metricIcon("cpu")
 
@@ -1573,6 +1600,7 @@ PluginComponent {
                             SectionCard {
                                 visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
+                                key: "cpu:tempCores"
                                 title: "Physical cores"
                                 icon: root.metricIcon("cpu")
 
@@ -1608,6 +1636,7 @@ PluginComponent {
                             SectionCard {
                                 visible: root.cores.length > 0 && root.opt("usageCores", true)
                                 width: parent.width
+                                key: "cpu:usageCores"
                                 title: "Per-core usage"
                                 icon: root.metricIcon("cpu")
 
@@ -1657,6 +1686,7 @@ PluginComponent {
 
                             SectionCard {
                                 width: parent.width
+                                key: "mem"
                                 title: "Memory"
                                 icon: "memory"
 
@@ -1712,6 +1742,7 @@ PluginComponent {
                             SectionCard {
                                 visible: root.mem != null && (root.mem.swapTotal > 0 || root.mem.zramTotal > 0)
                                 width: parent.width
+                                key: "mem:swap"
                                 title: "Swap & compression"
                                 icon: "swap_horiz"
 
@@ -1768,6 +1799,7 @@ PluginComponent {
                                                  && (gpuCol.g.usage != null || gpuCol.g.usageMem != null
                                                      || gpuCol.g.usageEnc != null || gpuCol.g.usageDec != null)
                                         width: parent.width
+                                        key: "gpu" + index + ":util"
                                         title: "Utilization"
                                         icon: "show_chart"
 
@@ -1807,6 +1839,7 @@ PluginComponent {
                                         visible: gpuCol.g != null && root.gpuShow("Mem")
                                                  && gpuCol.g.vramTotal != null && gpuCol.g.vramTotal > 0
                                         width: parent.width
+                                        key: "gpu" + index + ":mem"
                                         title: "Memory"
                                         icon: "developer_board"
 
@@ -1839,6 +1872,7 @@ PluginComponent {
                                                       || gpuCol.g.tempLimit != null || gpuCol.g.fanRpm != null
                                                       || gpuCol.g.fanPct != null || gpuCol.g.throttle)
                                         width: parent.width
+                                        key: "gpu" + index + ":thermals"
                                         title: "Thermals"
                                         icon: "thermostat"
 
@@ -1886,6 +1920,7 @@ PluginComponent {
                                         visible: gpuCol.g != null && root.gpuShow("Power")
                                                  && (gpuCol.g.powerW != null || root.gpuPowerLimits(gpuCol.g) !== "")
                                         width: parent.width
+                                        key: "gpu" + index + ":power"
                                         title: "Power"
                                         icon: "bolt"
 
@@ -1911,6 +1946,7 @@ PluginComponent {
                                                       || gpuCol.g.freqSm != null || gpuCol.g.freqVideo != null
                                                       || gpuCol.g.pstate)
                                         width: parent.width
+                                        key: "gpu" + index + ":clocks"
                                         title: "Clocks"
                                         icon: "speed"
 
@@ -1957,6 +1993,7 @@ PluginComponent {
                                                       || gpuCol.g.persistence || gpuCol.g.computeMode
                                                       || gpuCol.g.uuid || gpuCol.g.serial)
                                         width: parent.width
+                                        key: "gpu" + index + ":bus"
                                         title: "Bus & driver"
                                         icon: "cable"
 
@@ -2015,6 +2052,7 @@ PluginComponent {
                                     SectionCard {
                                         visible: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
                                         width: parent.width
+                                        key: "gpu" + index + ":procs"
                                         title: "Processes"
                                         icon: "list"
 
@@ -2049,6 +2087,7 @@ PluginComponent {
 
                             SectionCard {
                                 width: parent.width
+                                key: "fans"
                                 title: "Fans"
                                 icon: "mode_fan"
 
@@ -2084,6 +2123,7 @@ PluginComponent {
 
                             SectionCard {
                                 width: parent.width
+                                key: "disk"
                                 title: "Filesystems"
                                 icon: "storage"
 
@@ -2132,6 +2172,7 @@ PluginComponent {
 
                                 SectionCard {
                                     width: parent.width
+                                    key: "bat:power"
                                     title: "Power"
                                     icon: "power"
 
@@ -2201,6 +2242,7 @@ PluginComponent {
                                         id: hc
                                         readonly property var b: root.bats[index] ? root.bats[index] : null
                                         width: parent.width
+                                        key: "bat" + index + ":health"
                                         title: "Battery health" + root.batName(index)
                                         icon: "health_and_safety"
 
@@ -2293,6 +2335,7 @@ PluginComponent {
                                         SectionCard {
                                             visible: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
+                                            key: "bat" + index + ":charge"
                                             title: "Charge limit" + root.batName(index)
                                             icon: "battery_saver"
                                             caption: root.chargeCaption(chg.b)
@@ -2341,6 +2384,7 @@ PluginComponent {
                                         SectionCard {
                                             visible: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
+                                            key: "bat" + index + ":now"
                                             title: "Charge now" + root.batName(index)
                                             icon: "bolt"
                                             caption: "One-off actions. The configured limit comes back at the next boot or with Restore."
@@ -2379,6 +2423,7 @@ PluginComponent {
                                         SectionCard {
                                             visible: chg.b !== null && chg.b.behaviours.length > 1
                                             width: parent.width
+                                            key: "bat" + index + ":behaviour"
                                             title: "Charge behaviour" + root.batName(index)
                                             icon: "swap_vert"
                                             caption: "Kernel-level control: pause charging while on AC, or force the battery to discharge."
@@ -2394,6 +2439,7 @@ PluginComponent {
                                         SectionCard {
                                             visible: root.tlpHasFeature("recalibration") && chg.b !== null
                                             width: parent.width
+                                            key: "bat" + index + ":maint"
                                             title: "Maintenance" + root.batName(index)
                                             icon: "build"
 
@@ -2463,6 +2509,7 @@ PluginComponent {
                                 SectionCard {
                                     visible: root.tlpInstalled
                                     width: parent.width
+                                    key: "bat:profile"
                                     title: "Profile to edit"
                                     icon: "tune"
                                     caption: root.tlpInfo && root.tlpInfo.profiles
@@ -2486,6 +2533,7 @@ PluginComponent {
                                         readonly property var items: root.tlpItems(modelData, pop.tuneProfile)
                                         visible: items.length > 0
                                         width: parent.width
+                                        key: "bat:tlp" + index
                                         title: modelData.title
                                         icon: modelData.icon
 
@@ -2518,6 +2566,7 @@ PluginComponent {
                                 SectionCard {
                                     visible: root.tlpInstalled
                                     width: parent.width
+                                    key: "bat:where"
                                     title: "Where changes go"
                                     icon: "description"
                                     caption: "Changes are written to " + (root.tlpInfo ? root.tlpInfo.dropin : "/etc/tlp.d/99-dms-cpufreq.conf")

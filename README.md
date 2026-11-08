@@ -120,7 +120,8 @@ asking. Use `bash install.sh --auth` for prompts instead; re-run the installer t
 ## Design
 
 Components follow Material 3: primary tabs, a primary-container hero card per tab, filled
-surface-container cards for each group of rows, single-select segmented buttons (selected option in
+surface-container cards for each group of rows (click a card's header to collapse it — the state
+is remembered across popout opens and reboots), single-select segmented buttons (selected option in
 the accent color, height follows the font size, up to 5 options per row (Energy preference uses 3 + 2
 so every option keeps its icon), option icons only when they fit, inactive options with a subtle
 tonal fill), 52x32 switches, sliders with a value bubble, linear progress indicators and tonal
