@@ -117,6 +117,18 @@ PluginComponent {
 
         Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
+        // the whole card toggles its section. The area sits under the content,
+        // so interactive children keep their clicks and flick drags still
+        // bubble up to the popout's Flickable
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: card.title !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: if (card.title !== "") {
+                if (card.key !== "") root.toggleCollapsed(card.key)
+                else card.expanded = !card.expanded
+            }
+        }
+
         Column {
             id: layout
             x: Theme.spacingM
@@ -159,15 +171,6 @@ PluginComponent {
                     color: Theme.surfaceVariantText
                     rotation: card.expanded ? 0 : -90
                     Behavior on rotation { NumberAnimation { duration: 150 } }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        if (card.key !== "") root.toggleCollapsed(card.key)
-                        else card.expanded = !card.expanded
-                    }
                 }
             }
 
