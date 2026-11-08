@@ -40,7 +40,7 @@ PluginSettings {
         current: root.tab
         model: [
             { key: "general", label: "General", icon: "tune" },
-            { key: "cpu", label: "CPU", icon: "developer_board" },
+            { key: "cpu", label: "CPU", icon: "memory" },
             { key: "mem", label: "RAM", icon: "developer_board" },
             { key: "gpu", label: "GPU", icon: "auto_awesome_mosaic" },
             { key: "fans", label: "Fans", icon: "mode_fan" },

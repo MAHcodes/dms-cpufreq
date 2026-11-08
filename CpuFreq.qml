@@ -19,6 +19,7 @@ PluginComponent {
         id: hl
 
         property string icon: ""
+        property string title: ""
         property string value: ""
         property string caption: ""
         property real progress: -1          // 0..100, negative hides the bar
@@ -34,6 +35,15 @@ PluginComponent {
             y: Theme.spacingL
             width: parent.width - Theme.spacingL * 2
             spacing: Theme.spacingS
+
+            StyledText {
+                visible: hl.title !== ""
+                text: hl.title
+                font.pixelSize: Theme.fontSizeSmall
+                font.weight: Font.Bold
+                color: Theme.onPrimaryContainer
+                opacity: 0.8
+            }
 
             Row {
                 id: head
@@ -156,8 +166,8 @@ PluginComponent {
     // settings keys are still read as fallbacks (see optL).
     readonly property var metricKeys: ["cpu", "mem", "gpu", "fans", "disk", "bat"]
     readonly property var metricIcons: ({
-        cpu: "developer_board",
-        mem: "memory",
+        cpu: "memory",
+        mem: "developer_board",
         gpu: "auto_awesome_mosaic",
         fans: "mode_fan",
         disk: "storage",
@@ -1384,8 +1394,9 @@ PluginComponent {
                                 visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
                                 width: parent.width
                                 icon: "speed"
+                                title: "Frequency"
                                 value: root.fmtFreq(root.panelFreq(), false)
-                                caption: root.modeLabel() + " frequency"
+                                caption: root.modeLabel()
                                 progress: root.freqFraction(root.panelFreq())
                             }
 
@@ -1511,6 +1522,7 @@ PluginComponent {
                                 visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
                                 width: parent.width
                                 icon: "thermostat"
+                                title: "Temperature"
                                 value: root.fmtTemp(root.pkgTemp(), false)
                                 caption: "CPU package"
                                          + (root.cpu && root.cpu.physicalCores > 0
@@ -1548,8 +1560,9 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "memory"
+                                title: "Usage"
                                 value: Math.round(root.usageAll) + "%"
-                                caption: "CPU usage"
+                                caption: root.cpu && root.cpu.threads > 0 ? root.cpu.threads + " threads" : "CPU usage"
                                 progress: root.usageAll
                             }
 
@@ -1597,6 +1610,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "developer_board"
+                                title: "Memory"
                                 value: root.fmtBytes(root.memUsedB(), root.opt("memScale", "auto"), true)
                                 caption: "of " + root.fmtBytes(root.memTotalB(), root.opt("memScale", "auto"), true) + " used"
                                 progress: root.memPct()
@@ -1701,6 +1715,7 @@ PluginComponent {
                                     HeroCard {
                                         width: parent.width
                                         icon: "auto_awesome_mosaic"
+                                        title: "GPU" + (root.gpus.length > 1 ? " " + (index + 1) : "")
                                         value: gpuCol.g ? gpuCol.g.name : ""
                                         caption: gpuCol.g ? (root.gpuAsleep(gpuCol.g)
                                                  ? gpuCol.g.driver + " · powered down (not woken to read stats)"
@@ -1988,6 +2003,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "mode_fan"
+                                title: "Fans"
                                 value: root.fanRpm() === null ? "–" : Math.round(root.fanRpm()) + " RPM"
                                 caption: root.opt("fansDisplay", "max") === "avg" ? "Average fan speed" : "Fastest fan"
                             }
@@ -2018,6 +2034,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "storage"
+                                title: "Disk"
                                 value: root.diskSel() ? Math.round(root.diskPct(root.diskSel())) + "% used" : "–"
                                 caption: root.diskSel()
                                          ? root.diskSel().mount + " · "
@@ -2054,6 +2071,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: root.batIcon()
+                                title: "Battery"
                                 value: Math.round(root.batPct()) + "%"
                                 caption: root.batCaption()
                                 progress: root.batPct()
