@@ -54,11 +54,17 @@ esac
 cat <<MSG
 
 Done ($mode mode). polkit picks up the policy immediately.
-  1. DMS Settings -> Plugins -> Scan for Plugins -> enable "System Monitor"
+  1. DMS Settings -> Plugins -> Scan for Plugins -> enable "System Monitor"   (first install)
   2. Add it to a DankBar section
-  3. dms restart   (or: dms ipc call plugins reload cpuFreq)
+  3. Reload into a running shell:  dms ipc call plugins reload cpuFreq
 
 Battery tab: charge limits work on supported laptops with or without TLP.
 TLP profiles and tuning need TLP (https://linrunner.de/tlp); re-run this
 installer after updating the plugin so the helper is replaced too.
 MSG
+
+# pick up the new files in an already-running shell (no-op on first install)
+if command -v dms >/dev/null 2>&1; then
+    echo "==> dms ipc call plugins reload cpuFreq"
+    dms ipc call plugins reload cpuFreq || echo "    (not loaded yet - it loads when DMS starts)"
+fi
