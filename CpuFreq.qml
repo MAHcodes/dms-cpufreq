@@ -103,6 +103,7 @@ PluginComponent {
         property string title: ""
         property string icon: ""
         property string caption: ""
+        property real bodySpacing: Theme.spacingXS
 
         default property alias content: body.data
 
@@ -152,7 +153,7 @@ PluginComponent {
             Column {
                 id: body
                 width: parent.width
-                spacing: Theme.spacingXS
+                spacing: card.bodySpacing
             }
         }
     }
@@ -1406,6 +1407,7 @@ PluginComponent {
                                 width: parent.width
                                 title: "Performance"
                                 icon: "tune"
+                                bodySpacing: Theme.spacingS
 
                                 SwitchRow {
                                     visible: root.opt("cpuShowPerformance", true)
@@ -1428,36 +1430,32 @@ PluginComponent {
                                         text: "Frequency limits"
                                         icon: "swap_vert"
                                     }
-                                }
-
-                                SliderRow {
-                                    id: minRow
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && root.opt("freqShowMin", true)
-                                    width: parent.width
-                                    icon: "vertical_align_bottom"
-                                    label: "Minimum"
-                                    valueText: root.fmtFreq(minRow.shown, false)
-                                    from: root.cpu ? root.cpu.hwMin : 0
-                                    to: root.cpu ? root.cpu.hwMax : 1
-                                    step: 100000
-                                    value: root.cpu ? root.cpu.scalingMin : 0
-                                    onReleased: newValue => root.setMin(newValue)
-                                }
-
-                                SliderRow {
-                                    id: maxRow
-                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                             && root.opt("freqShowMax", true)
-                                    width: parent.width
-                                    icon: "vertical_align_top"
-                                    label: "Maximum"
-                                    valueText: root.fmtFreq(maxRow.shown, false)
-                                    from: root.cpu ? root.cpu.hwMin : 0
-                                    to: root.cpu ? root.cpu.hwMax : 1
-                                    step: 100000
-                                    value: root.cpu ? Math.min(root.cpu.scalingMax, root.cpu.hwMax) : 0
-                                    onReleased: newValue => root.setMax(newValue)
+                                    SliderRow {
+                                        id: minRow
+                                        visible: root.opt("freqShowMin", true)
+                                        width: parent.width
+                                        icon: "vertical_align_bottom"
+                                        label: "Minimum"
+                                        valueText: root.fmtFreq(minRow.shown, false)
+                                        from: root.cpu ? root.cpu.hwMin : 0
+                                        to: root.cpu ? root.cpu.hwMax : 1
+                                        step: 100000
+                                        value: root.cpu ? root.cpu.scalingMin : 0
+                                        onReleased: newValue => root.setMin(newValue)
+                                    }
+                                    SliderRow {
+                                        id: maxRow
+                                        visible: root.opt("freqShowMax", true)
+                                        width: parent.width
+                                        icon: "vertical_align_top"
+                                        label: "Maximum"
+                                        valueText: root.fmtFreq(maxRow.shown, false)
+                                        from: root.cpu ? root.cpu.hwMin : 0
+                                        to: root.cpu ? root.cpu.hwMax : 1
+                                        step: 100000
+                                        value: root.cpu ? Math.min(root.cpu.scalingMax, root.cpu.hwMax) : 0
+                                        onReleased: newValue => root.setMax(newValue)
+                                    }
                                 }
 
                                 Column {
