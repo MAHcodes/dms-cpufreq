@@ -124,13 +124,36 @@ PluginSettings {
     SelectionSetting {
         visible: root.tab === "freq"
         settingKey: "freqMode"
-        label: "Value shown in bar"
+        label: "Summary value"
+        description: "Average, minimum or maximum: the popout hero, and the bar until you change the toggles below"
         options: [
             { label: "Average", value: "avg" },
             { label: "Minimum", value: "min" },
             { label: "Maximum", value: "max" }
         ]
         defaultValue: "avg"
+    }
+
+    ToggleSetting {
+        visible: root.tab === "freq"
+        settingKey: "freqBarShowMin"
+        label: "Bar: minimum"
+        description: "Several can be on at once; same-unit values join into 0.55/3.42/4.10 GHz"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "freq"
+        settingKey: "freqBarShowAvg"
+        label: "Bar: average"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "freq"
+        settingKey: "freqBarShowMax"
+        label: "Bar: maximum"
+        defaultValue: false
     }
 
     SelectionSetting {
@@ -307,18 +330,40 @@ PluginSettings {
         defaultValue: true
     }
 
-    SelectionSetting {
+    ToggleSetting {
         visible: root.tab === "mem"
-        settingKey: "memDisplay"
-        label: "Value shown in bar"
-        options: [
-            { label: "Percent used", value: "percent" },
-            { label: "Used", value: "used" },
-            { label: "Available", value: "available" },
-            { label: "Free", value: "free" },
-            { label: "Used / total", value: "used_total" }
-        ]
-        defaultValue: "percent"
+        settingKey: "memBarShowPercent"
+        label: "Bar: percent used"
+        description: "Several can be on at once; the bar joins the values with spaces"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memBarShowUsed"
+        label: "Bar: used"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memBarShowAvailable"
+        label: "Bar: available"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memBarShowFree"
+        label: "Bar: free"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memBarShowUsed_total"
+        label: "Bar: used / total"
+        defaultValue: false
     }
 
     SelectionSetting {
@@ -361,18 +406,40 @@ PluginSettings {
         defaultValue: true
     }
 
-    SelectionSetting {
+    ToggleSetting {
         visible: root.tab === "gpu"
-        settingKey: "gpuDisplay"
-        label: "Value shown in bar"
-        options: [
-            { label: "Usage", value: "usage" },
-            { label: "Temperature", value: "temp" },
-            { label: "VRAM used", value: "vram" },
-            { label: "Power draw", value: "power" },
-            { label: "Graphics clock", value: "clock" }
-        ]
-        defaultValue: "usage"
+        settingKey: "gpuBarShowUsage"
+        label: "Bar: usage"
+        description: "Several can be on at once; the bar joins the values with spaces"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuBarShowTemp"
+        label: "Bar: temperature"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuBarShowVram"
+        label: "Bar: VRAM used"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuBarShowPower"
+        label: "Bar: power draw"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuBarShowClock"
+        label: "Bar: graphics clock"
+        defaultValue: false
     }
 
     SelectionSetting {
@@ -520,17 +587,33 @@ PluginSettings {
         defaultValue: true
     }
 
-    SelectionSetting {
+    ToggleSetting {
         visible: root.tab === "disk"
-        settingKey: "diskDisplay"
-        label: "Value shown in bar"
-        options: [
-            { label: "Percent used", value: "percent" },
-            { label: "Used", value: "used" },
-            { label: "Free", value: "free" },
-            { label: "Used / total", value: "used_total" }
-        ]
-        defaultValue: "percent"
+        settingKey: "diskBarShowPercent"
+        label: "Bar: percent used"
+        description: "Several can be on at once; the bar joins the values with spaces"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskBarShowUsed"
+        label: "Bar: used"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskBarShowFree"
+        label: "Bar: free"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskBarShowUsed_total"
+        label: "Bar: used / total"
+        defaultValue: false
     }
 
     SelectionSetting {
@@ -583,18 +666,33 @@ PluginSettings {
         defaultValue: true
     }
 
-    SelectionSetting {
+    ToggleSetting {
         visible: root.tab === "bat"
-        settingKey: "batDisplay"
-        label: "Value shown in bar"
-        description: "Several batteries are combined into one reading"
-        options: [
-            { label: "Charge", value: "percent" },
-            { label: "Time remaining", value: "time" },
-            { label: "Power draw", value: "power" },
-            { label: "Energy", value: "energy" }
-        ]
-        defaultValue: "percent"
+        settingKey: "batBarShowPercent"
+        label: "Bar: charge"
+        description: "Several can be on at once; the bar joins the values with spaces. Several batteries are combined into one reading"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batBarShowTime"
+        label: "Bar: time remaining"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batBarShowPower"
+        label: "Bar: power draw"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batBarShowEnergy"
+        label: "Bar: energy"
+        defaultValue: false
     }
 
     ToggleSetting {

@@ -494,10 +494,10 @@ PluginComponent {
     function freqList() {
         return cores.map(c => c.cur).filter(v => v != null && v !== undefined)
     }
-    function panelFreq() {
+    function panelFreq(m) {
         const f = freqList()
         if (!f.length) return null
-        const mode = opt("freqMode", "avg")
+        const mode = m || opt("freqMode", "avg")
         if (mode === "min") return Math.min.apply(null, f)
         if (mode === "max") return Math.max.apply(null, f)
         return f.reduce((a, b) => a + b, 0) / f.length
@@ -585,13 +585,41 @@ PluginComponent {
     }
     function diskPct(d) { return d && (d.used + d.avail) > 0 ? 100 * d.used / (d.used + d.avail) : 0 }
 
-    // [number, unit] for one bar entry: `barText` joins them for the horizontal
-    // bar, the vertical bar stacks the unit under the number. Unit strings carry
-    // the spacing used horizontally ("%"/"°C" hug the number, " GHz" does not).
-    function barParts(key) {
+    // Values a bar entry can show; several can be on at once (see the settings).
+    // `legacy` is the old single-choice setting: until any of the new
+    // <key>BarShow<Value> toggles is touched, it keeps deciding, so an existing
+    // setup carries over unchanged. `primary` is the fresh-install default.
+    readonly property var barValueDefs: ({
+        freq: { legacy: ["freqMode", "avg"], primary: "avg", values: ["min", "avg", "max"] },
+        mem: { legacy: ["memDisplay", "percent"], primary: "percent", values: ["percent", "used", "available", "free", "used_total"] },
+        gpu: { legacy: ["gpuDisplay", "usage"], primary: "usage", values: ["usage", "temp", "vram", "power", "clock"] },
+        disk: { legacy: ["diskDisplay", "percent"], primary: "percent", values: ["percent", "used", "free", "used_total"] },
+        bat: { legacy: ["batDisplay", "percent"], primary: "percent", values: ["percent", "time", "power", "energy"] }
+    })
+
+    function barValuesOn(key) {
+        const def = barValueDefs[key]
+        if (!def) return [key]              // temp, usage, fans: a single value
+        let touched = false
+        for (const k in (pluginData || {})) {
+            if (k.indexOf(key + "BarShow") === 0) { touched = true; break }
+        }
+        const out = []
+        for (const v of def.values) {
+            const on = touched
+                ? opt(key + "BarShow" + cap(v), v === def.primary) === true
+                : opt(def.legacy[0], def.legacy[1]) === v
+            if (on) out.push(v)
+        }
+        return out.length ? out : (touched ? [] : [def.primary])
+    }
+
+    // [number, unit] for one value of one bar entry. Unit strings carry the
+    // spacing used horizontally ("%"/"°C" hug the number, " GHz" does not).
+    function barPartsFor(key, val) {
         const u = x => opt(key + "ShowUnit", true) ? x : ""
         if (key === "freq") {
-            const khz = panelFreq()
+            const khz = panelFreq(val)
             if (khz === null) return ["–", ""]
             if (opt("freqScale", "GHz") === "MHz") return [String(Math.round(khz / 1000)), u(" MHz")]
             return [(khz / 1e6).toFixed(parseInt(opt("freqPrecision", "1"))), u(" GHz")]
@@ -606,11 +634,10 @@ PluginComponent {
         }
         if (key === "usage") return [String(Math.round(usageAll)), u("%")]
         if (key === "mem") {
-            const d = opt("memDisplay", "percent")
             const sc = opt("memScale", "auto")
-            if (d === "percent") return [String(Math.round(memPct())), u("%")]
-            if (d === "used" || d === "available" || d === "free") {
-                const b = d === "used" ? memUsedB() : memKB(d === "available" ? mem.avail : mem.free)
+            if (val === "percent") return [String(Math.round(memPct())), u("%")]
+            if (val === "used" || val === "available" || val === "free") {
+                const b = val === "used" ? memUsedB() : memKB(val === "available" ? mem.avail : mem.free)
                 const un = pickUnit(b, sc)
                 return [fmtNum(b / unitDiv(un)), u(" " + un)]
             }
@@ -620,17 +647,16 @@ PluginComponent {
         if (key === "gpu") {
             const g = gpuSel()
             if (!g) return ["–", ""]
-            const d = opt("gpuDisplay", "usage")
-            if (d === "temp") {
+            if (val === "temp") {
                 if (g.temp === null || g.temp === undefined) return ["–", ""]
                 const c = g.temp / 1000
                 return opt("tempScale", "C") === "F"
                     ? [String(Math.round(c * 9 / 5 + 32)), u("°F")]
                     : [String(Math.round(c)), u("°C")]
             }
-            if (d === "vram") return g.vramTotal > 0 ? [String(Math.round(gpuVramPct(g))), u("%")] : ["–", ""]
-            if (d === "power") return (g.powerW === null || g.powerW === undefined) ? ["–", ""] : [g.powerW.toFixed(1), u(" W")]
-            if (d === "clock") return (g.freq === null || g.freq === undefined) ? ["–", ""] : [String(g.freq), u(" MHz")]
+            if (val === "vram") return g.vramTotal > 0 ? [String(Math.round(gpuVramPct(g))), u("%")] : ["–", ""]
+            if (val === "power") return (g.powerW === null || g.powerW === undefined) ? ["–", ""] : [g.powerW.toFixed(1), u(" W")]
+            if (val === "clock") return (g.freq === null || g.freq === undefined) ? ["–", ""] : [String(g.freq), u(" MHz")]
             return g.usage === null ? ["–", ""] : [String(g.usage), u("%")]
         }
         if (key === "fans") {
@@ -640,11 +666,10 @@ PluginComponent {
         if (key === "disk") {
             const d = diskSel()
             if (!d) return ["–", ""]
-            const disp = opt("diskDisplay", "percent")
             const sc = opt("diskScale", "auto")
-            if (disp === "percent") return [String(Math.round(diskPct(d))), u("%")]
-            if (disp === "used" || disp === "free") {
-                const b = disp === "used" ? d.used : d.avail
+            if (val === "percent") return [String(Math.round(diskPct(d))), u("%")]
+            if (val === "used" || val === "free") {
+                const b = val === "used" ? d.used : d.avail
                 const un = pickUnit(b, sc)
                 return [fmtNum(b / unitDiv(un)), u(" " + un)]
             }
@@ -653,20 +678,28 @@ PluginComponent {
         }
         if (key === "bat") {
             if (!bats.length) return ["–", ""]
-            const d = opt("batDisplay", "percent")
             const t = batTotals()
-            if (d === "time") return [fmtDuration(batEtaH(), true), ""]
-            if (d === "power") return t.pw > 0 ? [(t.pw / 1e6).toFixed(1), u(" W")] : ["–", ""]
-            if (d === "energy") return t.haveEnergy ? [(t.en / 1e6).toFixed(1), u(" Wh")] : ["–", ""]
+            if (val === "time") return [fmtDuration(batEtaH(), true), ""]
+            if (val === "power") return t.pw > 0 ? [(t.pw / 1e6).toFixed(1), u(" W")] : ["–", ""]
+            if (val === "energy") return t.haveEnergy ? [(t.en / 1e6).toFixed(1), u(" Wh")] : ["–", ""]
             return [String(Math.round(batPct())), u("%")]
         }
         return ["", ""]
     }
 
+    // parts for every enabled value of one bar entry. Same-unit frequency
+    // values collapse into one pair, so avg + max reads "3.42/4.10 GHz".
+    function barValueParts(key) {
+        const out = []
+        for (const v of barValuesOn(key)) out.push(barPartsFor(key, v))
+        if (key === "freq" && out.length > 1 && out.every(p => p[1] === out[0][1]))
+            return [[out.map(p => p[0]).join("/"), out[0][1]]]
+        return out
+    }
+
     // text for one bar entry; `bare` (vertical bar) is the number without its unit
     function barText(key, bare) {
-        const p = barParts(key)
-        return bare ? p[0] : p[0] + p[1]
+        return barValueParts(key).map(p => bare ? p[0] : p[0] + p[1]).join(" ")
     }
 
     function pct(a, b) {
@@ -1170,15 +1203,17 @@ PluginComponent {
                 model: root.metricKeys
 
                 delegate: Column {
-                    readonly property var parts: root.barParts(modelData)
-                    readonly property bool sep: root.firstBarKey() !== modelData
+                    id: entry
+                    readonly property string mkey: modelData
+                    readonly property var values: root.barValueParts(mkey)
+                    readonly property bool sep: root.firstBarKey() !== mkey
 
                     spacing: Theme.spacingXS
-                    visible: root.barShown(modelData)
+                    visible: root.barShown(mkey)
                     anchors.horizontalCenter: parent.horizontalCenter
 
                     StyledText {
-                        visible: sep && root.barSep() === "dot"
+                        visible: entry.sep && root.barSep() === "dot"
                         text: "\u00B7"
                         font.pixelSize: Math.max(9, root.barFontSize - 4)
                         color: root.barTextColor
@@ -1186,7 +1221,7 @@ PluginComponent {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     Rectangle {
-                        visible: sep && root.barSep() === "line"
+                        visible: entry.sep && root.barSep() === "line"
                         width: Math.round(root.barFontSize * 1.5)
                         height: 1
                         color: root.barTextColor
@@ -1195,24 +1230,45 @@ PluginComponent {
                     }
 
                     DankIcon {
-                        visible: root.barIconShown(modelData)
-                        name: root.metricIcon(modelData)
+                        visible: root.barIconShown(entry.mkey)
+                        name: root.metricIcon(entry.mkey)
                         size: root.barIconSize
                         color: Theme.primary
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
-                    StyledText {
-                        text: parts[0]
-                        font.pixelSize: root.barFontSize
-                        color: root.barTextColor
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    StyledText {
-                        visible: parts[1] !== ""
-                        text: parts[1].trim()
-                        font.pixelSize: Math.max(9, root.barFontSize - 4)
-                        color: root.barTextColor
-                        anchors.horizontalCenter: parent.horizontalCenter
+
+                    // one block per shown value; a "/" in the number (used/total,
+                    // freq min/avg/max) splits over lines to fit the narrow bar
+                    Repeater {
+                        model: entry.values
+
+                        Column {
+                            readonly property var nums: modelData[0].split("/")
+
+                            StyledText {
+                                text: nums[0]
+                                font.pixelSize: root.barFontSize
+                                color: root.barTextColor
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                            Repeater {
+                                model: nums.length - 1
+
+                                StyledText {
+                                    text: "/" + nums[index + 1]
+                                    font.pixelSize: Math.max(9, root.barFontSize - 4)
+                                    color: root.barTextColor
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
+                            }
+                            StyledText {
+                                visible: modelData[1] !== ""
+                                text: modelData[1].trim()
+                                font.pixelSize: Math.max(9, root.barFontSize - 4)
+                                color: root.barTextColor
+                                anchors.horizontalCenter: parent.horizontalCenter
+                            }
+                        }
                     }
                 }
             }

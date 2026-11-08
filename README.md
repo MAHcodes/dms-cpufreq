@@ -14,14 +14,14 @@ Eight metrics, each with its own **popout tab** and its own **settings tab**:
 
 | Metric | Popout tab | Per-metric settings |
 |---|---|---|
-| Frequency | turbo, profile, governor, energy preference, min/max limits, per-core grid | bar value (avg/min/max), unit GHz/MHz, decimals, show/hide min limit, show/hide max limit, per-core grid columns |
+| Frequency | turbo, profile, governor, energy preference, min/max limits, per-core grid | bar values (min/avg/max, any mix), unit GHz/MHz, decimals, show/hide min limit, show/hide max limit, per-core grid columns |
 | Temperature | package + per-core temperatures | unit C/F, show/hide per-core, per-core grid columns |
 | CPU usage | total + per-core | per-core grid columns |
-| RAM | used / available / free / cached / buffers / shared / total / swap / ZRAM | bar value (percent, used, available, free, used/total), unit |
-| GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar value (usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
+| RAM | used / available / free / cached / buffers / shared / total / swap / ZRAM | bar values (any mix: percent, used, available, free, used/total), unit |
+| GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar values (any mix: usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
 | Fans | every fan reported by hwmon | bar value (fastest or average) |
-| Disk | every mounted filesystem | bar value (percent, used, free, used/total), unit, mount point |
-| Battery | see [Battery and TLP](#battery-and-tlp) | bar value (charge, time remaining, power, energy), keep limits across reboots, toggle each popout page (health, charging, tuning) |
+| Disk | every mounted filesystem | bar values (any mix: percent, used, free, used/total), unit, mount point |
+| Battery | see [Battery and TLP](#battery-and-tlp) | bar values (any mix: charge, time remaining, power, energy), keep limits across reboots, toggle each popout page (health, charging, tuning) |
 
 Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
@@ -158,4 +158,5 @@ plugins.
 * NixOS: `install.sh` does not apply; package the helper and policy declaratively.
 * The vertical bar stacks each entry's unit under its number (smaller font, when *show unit in bar*
   is on) and separates entries with spacing instead of two spaces. The optional separator applies
-  in both orientations.
+  in both orientations. Wide `/`-joined numbers (`used/total`, freq min/avg/max) split over lines
+  so they fit.
