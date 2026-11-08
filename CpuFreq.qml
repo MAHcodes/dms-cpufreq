@@ -13,8 +13,9 @@ PluginComponent {
 
     property var popoutService: null
 
-    // Hero card for the top of each tab. Inline (rather than a separate file) so
-    // an already-running shell can load it without a directory rescan/restart.
+    // Hero card for the top of each tab: icon + value + caption in the accent
+    // color. With a key set, clicking it collapses the section cards
+    // underneath (which carry the same key as their `group`).
     component HeroCard: StyledRect {
         id: hl
 
@@ -23,11 +24,30 @@ PluginComponent {
         property string value: ""
         property string caption: ""
         property real progress: -1          // 0..100, negative hides the bar
+        property string key: ""             // group key: clicking collapses the sections below
 
         width: parent ? parent.width : 0
         height: col.implicitHeight + Theme.spacingL * 2
         radius: Theme.cornerRadiusL
         color: Theme.primaryContainer
+
+        DankIcon {
+            visible: hl.key !== ""
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.spacingL
+            anchors.verticalCenter: parent.verticalCenter
+            name: "expand_more"
+            size: Theme.iconSize - 10
+            color: Theme.onPrimaryContainer
+            rotation: root.collapsed[hl.key] === true ? -90 : 0
+            Behavior on rotation { NumberAnimation { duration: 150 } }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: hl.key !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: if (hl.key !== "") root.toggleCollapsed(hl.key)
+        }
 
         Column {
             id: col
@@ -74,7 +94,8 @@ PluginComponent {
                         font.weight: Font.Bold
                         color: Theme.onPrimaryContainer
                         elide: Text.ElideRight
-                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM)
+                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM
+                                        - (hl.key !== "" ? Theme.iconSize + Theme.spacingM : 0))
                     }
                     StyledText {
                         text: hl.caption
@@ -82,7 +103,8 @@ PluginComponent {
                         color: Theme.onPrimaryContainer
                         opacity: 0.8
                         elide: Text.ElideRight
-                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM)
+                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM
+                                        - (hl.key !== "" ? Theme.iconSize + Theme.spacingM : 0))
                     }
                 }
             }
@@ -106,7 +128,10 @@ PluginComponent {
         property string caption: ""
         property real bodySpacing: Theme.spacingXS
         property string key: ""        // stable id; keyed cards remember their collapse state
-        property bool expanded: key !== "" ? root.collapsed[key] !== true : true
+        property string group: ""      // set when the hero card above toggles this whole section
+        property bool expanded: root.collapsed[group] === true
+                                ? false
+                                : key !== "" ? root.collapsed[key] !== true : true
 
         default property alias content: body.data
 
@@ -116,18 +141,6 @@ PluginComponent {
         color: Theme.surfaceContainer
 
         Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-
-        // the whole card toggles its section. The area sits under the content,
-        // so interactive children keep their clicks and flick drags still
-        // bubble up to the popout's Flickable
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: card.title !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: if (card.title !== "") {
-                if (card.key !== "") root.toggleCollapsed(card.key)
-                else card.expanded = !card.expanded
-            }
-        }
 
         Column {
             id: layout
@@ -171,6 +184,16 @@ PluginComponent {
                     color: Theme.surfaceVariantText
                     rotation: card.expanded ? 0 : -90
                     Behavior on rotation { NumberAnimation { duration: 150 } }
+                }
+
+                // only the header toggles the section; the body keeps its clicks
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: card.title !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: if (card.title !== "") {
+                        if (card.key !== "") root.toggleCollapsed(card.key)
+                        else card.expanded = !card.expanded
+                    }
                 }
             }
 
@@ -1449,6 +1472,7 @@ PluginComponent {
                             HeroCard {
                                 visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
                                 width: parent.width
+                                key: "g:cpuFreq"
                                 icon: root.metricIcon("cpu")
                                 title: "Frequency"
                                 value: root.fmtFreq(root.panelFreq(), false)
@@ -1461,6 +1485,7 @@ PluginComponent {
                                          || root.opt("freqShowMin", true) || root.opt("freqShowMax", true)
                                 width: parent.width
                                 key: "cpu:performance"
+                                group: "g:cpuFreq"
                                 title: "Performance"
                                 icon: "tune"
                                 bodySpacing: Theme.spacingS
@@ -1565,6 +1590,7 @@ PluginComponent {
                                 visible: root.cores.length > 0 && root.opt("freqCores", true)
                                 width: parent.width
                                 key: "cpu:freqCores"
+                                group: "g:cpuFreq"
                                 title: "Per-core frequency"
                                 icon: root.metricIcon("cpu")
 
@@ -1590,6 +1616,7 @@ PluginComponent {
                             HeroCard {
                                 visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
                                 width: parent.width
+                                key: "g:cpuTemp"
                                 icon: root.metricIcon("cpu")
                                 title: "Temperature"
                                 value: root.fmtTemp(root.pkgTemp(), false)
@@ -1604,6 +1631,7 @@ PluginComponent {
                                 visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
                                 key: "cpu:tempCores"
+                                group: "g:cpuTemp"
                                 title: "Physical cores"
                                 icon: root.metricIcon("cpu")
 
@@ -1629,6 +1657,7 @@ PluginComponent {
 
                             HeroCard {
                                 width: parent.width
+                                key: "g:cpuUsage"
                                 icon: root.metricIcon("cpu")
                                 title: "Usage"
                                 value: Math.round(root.usageAll) + "%"
@@ -1640,6 +1669,7 @@ PluginComponent {
                                 visible: root.cores.length > 0 && root.opt("usageCores", true)
                                 width: parent.width
                                 key: "cpu:usageCores"
+                                group: "g:cpuUsage"
                                 title: "Per-core usage"
                                 icon: root.metricIcon("cpu")
 
@@ -1680,6 +1710,7 @@ PluginComponent {
 
                             HeroCard {
                                 width: parent.width
+                                key: "g:mem"
                                 icon: "developer_board"
                                 title: "Memory"
                                 value: root.fmtBytes(root.memUsedB(), root.opt("memScale", "auto"), true)
@@ -1690,6 +1721,7 @@ PluginComponent {
                             SectionCard {
                                 width: parent.width
                                 key: "mem"
+                                group: "g:mem"
                                 title: "Memory"
                                 icon: "memory"
 
@@ -1746,6 +1778,7 @@ PluginComponent {
                                 visible: root.mem != null && (root.mem.swapTotal > 0 || root.mem.zramTotal > 0)
                                 width: parent.width
                                 key: "mem:swap"
+                                group: "g:mem"
                                 title: "Swap & compression"
                                 icon: "swap_horiz"
 
@@ -1789,6 +1822,7 @@ PluginComponent {
                                         width: parent.width
                                         icon: "auto_awesome_mosaic"
                                         title: "GPU" + (root.gpus.length > 1 ? " " + (index + 1) : "")
+                                        key: "g:gpu" + index
                                         value: gpuCol.g ? gpuCol.g.name : ""
                                         caption: gpuCol.g ? (root.gpuAsleep(gpuCol.g)
                                                  ? gpuCol.g.driver + " · powered down (not woken to read stats)"
@@ -1803,6 +1837,7 @@ PluginComponent {
                                                      || gpuCol.g.usageEnc != null || gpuCol.g.usageDec != null)
                                         width: parent.width
                                         key: "gpu" + index + ":util"
+                                        group: "g:gpu" + index
                                         title: "Utilization"
                                         icon: "show_chart"
 
@@ -1843,6 +1878,7 @@ PluginComponent {
                                                  && gpuCol.g.vramTotal != null && gpuCol.g.vramTotal > 0
                                         width: parent.width
                                         key: "gpu" + index + ":mem"
+                                        group: "g:gpu" + index
                                         title: "Memory"
                                         icon: "developer_board"
 
@@ -1876,6 +1912,7 @@ PluginComponent {
                                                       || gpuCol.g.fanPct != null || gpuCol.g.throttle)
                                         width: parent.width
                                         key: "gpu" + index + ":thermals"
+                                        group: "g:gpu" + index
                                         title: "Thermals"
                                         icon: "thermostat"
 
@@ -1924,6 +1961,7 @@ PluginComponent {
                                                  && (gpuCol.g.powerW != null || root.gpuPowerLimits(gpuCol.g) !== "")
                                         width: parent.width
                                         key: "gpu" + index + ":power"
+                                        group: "g:gpu" + index
                                         title: "Power"
                                         icon: "bolt"
 
@@ -1950,6 +1988,7 @@ PluginComponent {
                                                       || gpuCol.g.pstate)
                                         width: parent.width
                                         key: "gpu" + index + ":clocks"
+                                        group: "g:gpu" + index
                                         title: "Clocks"
                                         icon: "speed"
 
@@ -1997,6 +2036,7 @@ PluginComponent {
                                                       || gpuCol.g.uuid || gpuCol.g.serial)
                                         width: parent.width
                                         key: "gpu" + index + ":bus"
+                                        group: "g:gpu" + index
                                         title: "Bus & driver"
                                         icon: "cable"
 
@@ -2056,6 +2096,7 @@ PluginComponent {
                                         visible: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
                                         width: parent.width
                                         key: "gpu" + index + ":procs"
+                                        group: "g:gpu" + index
                                         title: "Processes"
                                         icon: "list"
 
@@ -2083,6 +2124,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "mode_fan"
+                                key: "g:fans"
                                 title: "Fans"
                                 value: root.fanRpm() === null ? "–" : Math.round(root.fanRpm()) + " RPM"
                                 caption: root.opt("fansDisplay", "max") === "avg" ? "Average fan speed" : "Fastest fan"
@@ -2091,6 +2133,7 @@ PluginComponent {
                             SectionCard {
                                 width: parent.width
                                 key: "fans"
+                                group: "g:fans"
                                 title: "Fans"
                                 icon: "mode_fan"
 
@@ -2115,6 +2158,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: "storage"
+                                key: "g:disk"
                                 title: "Disk"
                                 value: root.diskSel() ? Math.round(root.diskPct(root.diskSel())) + "% used" : "–"
                                 caption: root.diskSel()
@@ -2127,6 +2171,7 @@ PluginComponent {
                             SectionCard {
                                 width: parent.width
                                 key: "disk"
+                                group: "g:disk"
                                 title: "Filesystems"
                                 icon: "storage"
 
@@ -2153,6 +2198,7 @@ PluginComponent {
                             HeroCard {
                                 width: parent.width
                                 icon: root.batIcon()
+                                key: "g:bat"
                                 title: "Battery"
                                 value: Math.round(root.batPct()) + "%"
                                 caption: root.batCaption()
@@ -2176,6 +2222,7 @@ PluginComponent {
                                 SectionCard {
                                     width: parent.width
                                     key: "bat:power"
+                                    group: "g:bat"
                                     title: "Power"
                                     icon: "power"
 
@@ -2246,6 +2293,7 @@ PluginComponent {
                                         readonly property var b: root.bats[index] ? root.bats[index] : null
                                         width: parent.width
                                         key: "bat" + index + ":health"
+                                        group: "g:bat"
                                         title: "Battery health" + root.batName(index)
                                         icon: "health_and_safety"
 
@@ -2339,6 +2387,7 @@ PluginComponent {
                                             visible: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
                                             key: "bat" + index + ":charge"
+                                            group: "g:bat"
                                             title: "Charge limit" + root.batName(index)
                                             icon: "battery_saver"
                                             caption: root.chargeCaption(chg.b)
@@ -2388,6 +2437,7 @@ PluginComponent {
                                             visible: chg.b !== null && chg.b.hasStop === true
                                             width: parent.width
                                             key: "bat" + index + ":now"
+                                            group: "g:bat"
                                             title: "Charge now" + root.batName(index)
                                             icon: "bolt"
                                             caption: "One-off actions. The configured limit comes back at the next boot or with Restore."
@@ -2427,6 +2477,7 @@ PluginComponent {
                                             visible: chg.b !== null && chg.b.behaviours.length > 1
                                             width: parent.width
                                             key: "bat" + index + ":behaviour"
+                                            group: "g:bat"
                                             title: "Charge behaviour" + root.batName(index)
                                             icon: "swap_vert"
                                             caption: "Kernel-level control: pause charging while on AC, or force the battery to discharge."
@@ -2443,6 +2494,7 @@ PluginComponent {
                                             visible: root.tlpHasFeature("recalibration") && chg.b !== null
                                             width: parent.width
                                             key: "bat" + index + ":maint"
+                                            group: "g:bat"
                                             title: "Maintenance" + root.batName(index)
                                             icon: "build"
 
@@ -2513,6 +2565,7 @@ PluginComponent {
                                     visible: root.tlpInstalled
                                     width: parent.width
                                     key: "bat:profile"
+                                    group: "g:bat"
                                     title: "Profile to edit"
                                     icon: "tune"
                                     caption: root.tlpInfo && root.tlpInfo.profiles
@@ -2532,11 +2585,11 @@ PluginComponent {
 
                                     delegate: SectionCard {
                                         id: grp
-                                        readonly property var group: modelData
                                         readonly property var items: root.tlpItems(modelData, pop.tuneProfile)
                                         visible: items.length > 0
                                         width: parent.width
                                         key: "bat:tlp" + index
+                                        group: "g:bat"
                                         title: modelData.title
                                         icon: modelData.icon
 
@@ -2570,6 +2623,7 @@ PluginComponent {
                                     visible: root.tlpInstalled
                                     width: parent.width
                                     key: "bat:where"
+                                    group: "g:bat"
                                     title: "Where changes go"
                                     icon: "description"
                                     caption: "Changes are written to " + (root.tlpInfo ? root.tlpInfo.dropin : "/etc/tlp.d/99-dms-cpufreq.conf")
