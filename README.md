@@ -36,7 +36,7 @@ GPU data comes from sysfs/hwmon, plus a single `nvidia-smi --query-gpu` call on 
 fallback to the basic field set on older drivers). A runtime-suspended GPU is still never queried.
 `nvidia-smi --query-compute-apps` adds the per-GPU compute process list.
 
-Bar entries are separated by two spaces.
+Bar entries are separated by two spaces; a dot or line separator is optional (General settings).
 
 ## Battery and TLP
 
@@ -157,4 +157,5 @@ plugins.
 * Sliders apply on release, not while dragging.
 * NixOS: `install.sh` does not apply; package the helper and policy declaratively.
 * The vertical bar stacks each entry's unit under its number (smaller font, when *show unit in bar*
-  is on) and separates entries with spacing instead of two spaces.
+  is on) and separates entries with spacing instead of two spaces. The optional separator applies
+  in both orientations.

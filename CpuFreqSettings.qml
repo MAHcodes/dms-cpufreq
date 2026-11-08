@@ -80,6 +80,19 @@ PluginSettings {
         wrapMode: Text.WordWrap
     }
 
+    SelectionSetting {
+        visible: root.tab === "general"
+        settingKey: "barSeparator"
+        label: "Separator between bar entries"
+        description: "Dot or line between entries, in horizontal and vertical bars"
+        options: [
+            { label: "None", value: "none" },
+            { label: "Dot", value: "dot" },
+            { label: "Line", value: "line" }
+        ]
+        defaultValue: "none"
+    }
+
     ToggleSetting {
         visible: root.tab === "freq"
         settingKey: "freqBar"

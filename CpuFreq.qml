@@ -283,6 +283,9 @@ PluginComponent {
     function tabShown(key) { return available(key) && opt(key + "Tab", true) }
     function barIconShown(key) { return opt(key + "Icon", true) }
 
+    // optional divider between bar entries (see General settings)
+    function barSep() { return opt("barSeparator", "none") }
+
     function firstBarKey() {
         for (const k of metricKeys) if (barShown(k)) return k
         return ""
@@ -1093,15 +1096,39 @@ PluginComponent {
                 model: root.metricKeys
 
                 delegate: Row {
+                    readonly property bool sep: root.firstBarKey() !== modelData
+
                     spacing: 0
                     visible: root.barShown(modelData)
 
                     StyledText {
-                        visible: root.firstBarKey() !== modelData
+                        visible: sep && root.barSep() === "none"
                         text: "\u00A0\u00A0"
                         font.pixelSize: root.barFontSize
                         color: root.barTextColor
                         anchors.verticalCenter: parent.verticalCenter
+                    }
+                    StyledText {
+                        visible: sep && root.barSep() === "dot"
+                        text: "\u00A0\u00B7\u00A0"
+                        font.pixelSize: root.barFontSize
+                        color: root.barTextColor
+                        opacity: 0.55
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Item {
+                        visible: sep && root.barSep() === "line"
+                        width: root.barFontSize
+                        height: 1
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 1
+                            height: Math.round(root.barFontSize * 1.1)
+                            color: root.barTextColor
+                            opacity: 0.4
+                        }
                     }
 
                     Row {
@@ -1144,10 +1171,28 @@ PluginComponent {
 
                 delegate: Column {
                     readonly property var parts: root.barParts(modelData)
+                    readonly property bool sep: root.firstBarKey() !== modelData
 
                     spacing: Theme.spacingXS
                     visible: root.barShown(modelData)
                     anchors.horizontalCenter: parent.horizontalCenter
+
+                    StyledText {
+                        visible: sep && root.barSep() === "dot"
+                        text: "\u00B7"
+                        font.pixelSize: Math.max(9, root.barFontSize - 4)
+                        color: root.barTextColor
+                        opacity: 0.55
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    Rectangle {
+                        visible: sep && root.barSep() === "line"
+                        width: Math.round(root.barFontSize * 1.5)
+                        height: 1
+                        color: root.barTextColor
+                        opacity: 0.4
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
 
                     DankIcon {
                         visible: root.barIconShown(modelData)

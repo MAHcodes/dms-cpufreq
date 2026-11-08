@@ -18,7 +18,8 @@ as "powered down" and never queried, so reading stats never wakes it.
 
 ## Bar entries
 
-One entry per metric with *show in bar* on, separated by two spaces. Which value an entry shows is
+One entry per metric with *show in bar* on, separated by two spaces (a dot or line separator is
+optional, General settings). Which value an entry shows is
 per-metric ("Value shown in bar"); in vertical bars the unit stacks under the number in a smaller
 font instead of trailing it. Formatting rules:
 
