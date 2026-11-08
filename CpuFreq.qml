@@ -1141,7 +1141,7 @@ PluginComponent {
     }
 
     // ========================================================== popout =====
-    popoutWidth: 480
+    popoutWidth: 540
     popoutHeight: 660
 
     popoutContent: Component {
