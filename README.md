@@ -156,4 +156,5 @@ plugins.
 * With several bars or monitors DMS creates one instance per bar and each polls (cheap). Restore on launch can fire once per instance.
 * Sliders apply on release, not while dragging.
 * NixOS: `install.sh` does not apply; package the helper and policy declaratively.
-* The vertical bar shows values without units and stacks entries with spacing instead of two spaces.
+* The vertical bar stacks each entry's unit under its number (smaller font, when *show unit in bar*
+  is on) and separates entries with spacing instead of two spaces.

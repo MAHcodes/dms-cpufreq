@@ -582,55 +582,88 @@ PluginComponent {
     }
     function diskPct(d) { return d && (d.used + d.avail) > 0 ? 100 * d.used / (d.used + d.avail) : 0 }
 
-    // text for one bar entry; `bare` forces no unit (vertical bar)
-    function barText(key, bare) {
-        const u = bare ? false : opt(key + "ShowUnit", true)
-        if (key === "freq") return fmtFreq(panelFreq(), !u)
-        if (key === "temp") return fmtTemp(pkgTemp(), !u)
-        if (key === "usage") return Math.round(usageAll) + (u ? "%" : "")
+    // [number, unit] for one bar entry: `barText` joins them for the horizontal
+    // bar, the vertical bar stacks the unit under the number. Unit strings carry
+    // the spacing used horizontally ("%"/"°C" hug the number, " GHz" does not).
+    function barParts(key) {
+        const u = x => opt(key + "ShowUnit", true) ? x : ""
+        if (key === "freq") {
+            const khz = panelFreq()
+            if (khz === null) return ["–", ""]
+            if (opt("freqScale", "GHz") === "MHz") return [String(Math.round(khz / 1000)), u(" MHz")]
+            return [(khz / 1e6).toFixed(parseInt(opt("freqPrecision", "1"))), u(" GHz")]
+        }
+        if (key === "temp") {
+            const mc = pkgTemp()
+            if (mc === null) return ["–", ""]
+            const c = mc / 1000
+            return opt("tempScale", "C") === "F"
+                ? [String(Math.round(c * 9 / 5 + 32)), u("°F")]
+                : [String(Math.round(c)), u("°C")]
+        }
+        if (key === "usage") return [String(Math.round(usageAll)), u("%")]
         if (key === "mem") {
             const d = opt("memDisplay", "percent")
             const sc = opt("memScale", "auto")
-            if (d === "percent") return Math.round(memPct()) + (u ? "%" : "")
-            if (d === "used") return fmtBytes(memUsedB(), sc, u)
-            if (d === "available") return fmtBytes(memKB(mem.avail), sc, u)
-            if (d === "free") return fmtBytes(memKB(mem.free), sc, u)
-            return fmtBytesPair(memUsedB(), memTotalB(), sc, u)
+            if (d === "percent") return [String(Math.round(memPct())), u("%")]
+            if (d === "used" || d === "available" || d === "free") {
+                const b = d === "used" ? memUsedB() : memKB(d === "available" ? mem.avail : mem.free)
+                const un = pickUnit(b, sc)
+                return [fmtNum(b / unitDiv(un)), u(" " + un)]
+            }
+            const un = pickUnit(memTotalB(), sc)
+            return [fmtNum(memUsedB() / unitDiv(un)) + "/" + fmtNum(memTotalB() / unitDiv(un)), u(" " + un)]
         }
         if (key === "gpu") {
             const g = gpuSel()
-            if (!g) return "–"
+            if (!g) return ["–", ""]
             const d = opt("gpuDisplay", "usage")
-            if (d === "temp") return g.temp === null ? "–" : fmtTemp(g.temp, !u)
-            if (d === "vram") return g.vramTotal > 0 ? Math.round(gpuVramPct(g)) + (u ? "%" : "") : "–"
-            if (d === "power") return (g.powerW === null || g.powerW === undefined) ? "–" : g.powerW.toFixed(1) + (u ? " W" : "")
-            if (d === "clock") return (g.freq === null || g.freq === undefined) ? "–" : g.freq + (u ? " MHz" : "")
-            return g.usage === null ? "–" : g.usage + (u ? "%" : "")
+            if (d === "temp") {
+                if (g.temp === null || g.temp === undefined) return ["–", ""]
+                const c = g.temp / 1000
+                return opt("tempScale", "C") === "F"
+                    ? [String(Math.round(c * 9 / 5 + 32)), u("°F")]
+                    : [String(Math.round(c)), u("°C")]
+            }
+            if (d === "vram") return g.vramTotal > 0 ? [String(Math.round(gpuVramPct(g))), u("%")] : ["–", ""]
+            if (d === "power") return (g.powerW === null || g.powerW === undefined) ? ["–", ""] : [g.powerW.toFixed(1), u(" W")]
+            if (d === "clock") return (g.freq === null || g.freq === undefined) ? ["–", ""] : [String(g.freq), u(" MHz")]
+            return g.usage === null ? ["–", ""] : [String(g.usage), u("%")]
         }
         if (key === "fans") {
             const r = fanRpm()
-            return r === null ? "–" : Math.round(r) + (u ? " RPM" : "")
+            return r === null ? ["–", ""] : [String(Math.round(r)), u(" RPM")]
         }
         if (key === "disk") {
             const d = diskSel()
-            if (!d) return "–"
+            if (!d) return ["–", ""]
             const disp = opt("diskDisplay", "percent")
             const sc = opt("diskScale", "auto")
-            if (disp === "percent") return Math.round(diskPct(d)) + (u ? "%" : "")
-            if (disp === "used") return fmtBytes(d.used, sc, u)
-            if (disp === "free") return fmtBytes(d.avail, sc, u)
-            return fmtBytesPair(d.used, d.used + d.avail, sc, u)
+            if (disp === "percent") return [String(Math.round(diskPct(d))), u("%")]
+            if (disp === "used" || disp === "free") {
+                const b = disp === "used" ? d.used : d.avail
+                const un = pickUnit(b, sc)
+                return [fmtNum(b / unitDiv(un)), u(" " + un)]
+            }
+            const un = pickUnit(d.used + d.avail, sc)
+            return [fmtNum(d.used / unitDiv(un)) + "/" + fmtNum((d.used + d.avail) / unitDiv(un)), u(" " + un)]
         }
         if (key === "bat") {
-            if (!bats.length) return "–"
+            if (!bats.length) return ["–", ""]
             const d = opt("batDisplay", "percent")
             const t = batTotals()
-            if (d === "time") return fmtDuration(batEtaH(), true)
-            if (d === "power") return t.pw > 0 ? (t.pw / 1e6).toFixed(1) + (u ? " W" : "") : "–"
-            if (d === "energy") return t.haveEnergy ? (t.en / 1e6).toFixed(1) + (u ? " Wh" : "") : "–"
-            return Math.round(batPct()) + (u ? "%" : "")
+            if (d === "time") return [fmtDuration(batEtaH(), true), ""]
+            if (d === "power") return t.pw > 0 ? [(t.pw / 1e6).toFixed(1), u(" W")] : ["–", ""]
+            if (d === "energy") return t.haveEnergy ? [(t.en / 1e6).toFixed(1), u(" Wh")] : ["–", ""]
+            return [String(Math.round(batPct())), u("%")]
         }
-        return ""
+        return ["", ""]
+    }
+
+    // text for one bar entry; `bare` (vertical bar) is the number without its unit
+    function barText(key, bare) {
+        const p = barParts(key)
+        return bare ? p[0] : p[0] + p[1]
     }
 
     function pct(a, b) {
@@ -1110,6 +1143,8 @@ PluginComponent {
                 model: root.metricKeys
 
                 delegate: Column {
+                    readonly property var parts: root.barParts(modelData)
+
                     spacing: Theme.spacingXS
                     visible: root.barShown(modelData)
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -1122,8 +1157,15 @@ PluginComponent {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                     StyledText {
-                        text: root.barText(modelData, true)
+                        text: parts[0]
                         font.pixelSize: root.barFontSize
+                        color: root.barTextColor
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    StyledText {
+                        visible: parts[1] !== ""
+                        text: parts[1].trim()
+                        font.pixelSize: Math.max(9, root.barFontSize - 4)
                         color: root.barTextColor
                         anchors.horizontalCenter: parent.horizontalCenter
                     }

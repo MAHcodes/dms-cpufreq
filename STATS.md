@@ -18,8 +18,9 @@ as "powered down" and never queried, so reading stats never wakes it.
 
 ## Bar entries
 
-One entry per metric with *show in bar* on, separated by two spaces (vertical bars stack entries
-and drop the units). Which value an entry shows is per-metric ("Value shown in bar"); formatting rules:
+One entry per metric with *show in bar* on, separated by two spaces. Which value an entry shows is
+per-metric ("Value shown in bar"); in vertical bars the unit stacks under the number in a smaller
+font instead of trailing it. Formatting rules:
 
 * Frequency: average/min/max of all logical cores, in GHz (configurable decimals) or rounded MHz.
 * Temperature: package sensor, °C or °F.
