@@ -13,16 +13,24 @@ Seven metrics, each with its own **popout tab** and its own **settings tab**:
 
 | Metric | Popout tab | Per-metric settings |
 |---|---|---|
-| Frequency | turbo, profile, governor, energy preference, min/max limits, per-core grid | bar value (avg/min/max), unit GHz/MHz, decimals, show/hide min limit, show/hide max limit, per-core grid |
-| Temperature | package + per-core temperatures | unit C/F |
-| CPU usage | total + per-core | |
-| RAM | used / available / total / swap | bar value (percent, used, used/total), unit |
-| GPU | usage, VRAM, temp, fan, clock, power (AMD, Intel, NVIDIA) | bar value (usage, temp, VRAM), which GPU |
+| Frequency | turbo, profile, governor, energy preference, min/max limits, per-core grid | bar value (avg/min/max), unit GHz/MHz, decimals, show/hide min limit, show/hide max limit, per-core grid columns |
+| Temperature | package + per-core temperatures | unit C/F, show/hide per-core, per-core grid columns |
+| CPU usage | total + per-core | per-core grid columns |
+| RAM | used / available / free / cached / buffers / shared / total / swap / ZRAM | bar value (percent, used, available, free, used/total), unit |
+| GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar value (usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
 | Fans | every fan reported by hwmon | bar value (fastest or average) |
 | Disk | every mounted filesystem | bar value (percent, used, free, used/total), unit, mount point |
 
 Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
+
+Per-core temperatures and frequencies use a configurable grid (1-4 columns). Note that CPU
+temperature sensors are per **physical** core: a 6-core / 12-thread CPU such as the i7-8750H reports
+6 readings (`coretemp`), not 12. The Temp tab says so and shows the core/thread counts.
+
+GPU data comes from sysfs/hwmon, plus a single `nvidia-smi --query-gpu` call on NVIDIA (with a
+fallback to the basic field set on older drivers). A runtime-suspended GPU is still never queried.
+`nvidia-smi --query-compute-apps` adds the per-GPU compute process list.
 
 Bar entries are separated by two spaces.
 
@@ -78,14 +86,16 @@ asking. Use `bash install.sh --auth` for prompts instead; re-run the installer t
 
 ## Design
 
-Components follow Material 3: primary tabs, single-select segmented buttons (selected option in the
-accent color, height follows the font size, up to 5 options per row (Energy preference uses 3 + 2 so every option keeps its icon), option icons only when they fit,
-inactive options with a subtle tonal fill), 52x32 switches, sliders with a value bubble, linear progress
-indicators and tonal cards. Bar text and icons are sized exactly like the built-in DankBar widgets
-(`Theme.barTextSize` with the bar's thickness, font scale and "maximize widget text" settings, and
-the icon size DMS provides), so they follow your bar settings; the popout uses `fontSizeSmall` /
-`fontSizeMedium` / `fontSizeLarge`. Colors only use `Theme`
-properties documented for DMS plugins.
+Components follow Material 3: primary tabs, a primary-container hero card per tab, filled
+surface-container cards for each group of rows, single-select segmented buttons (selected option in
+the accent color, height follows the font size, up to 5 options per row (Energy preference uses 3 + 2
+so every option keeps its icon), option icons only when they fit, inactive options with a subtle
+tonal fill), 52x32 switches, sliders with a value bubble, linear progress indicators and tonal
+cards. Bar text and icons are sized exactly like the built-in DankBar widgets (`Theme.barTextSize`
+with the bar's thickness, font scale and "maximize widget text" settings, and the icon size DMS
+provides), so they follow your bar settings; the popout uses `fontSizeSmall` / `fontSizeMedium` /
+`fontSizeXLarge` and elides long values. Colors only use `Theme` properties documented for DMS
+plugins.
 
 ## Testing status
 

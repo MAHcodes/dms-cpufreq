@@ -13,6 +13,140 @@ PluginComponent {
 
     property var popoutService: null
 
+    // Hero card for the top of each tab. Inline (rather than a separate file) so
+    // an already-running shell can load it without a directory rescan/restart.
+    component HeroCard: StyledRect {
+        id: hl
+
+        property string icon: ""
+        property string value: ""
+        property string caption: ""
+        property real progress: -1          // 0..100, negative hides the bar
+
+        width: parent ? parent.width : 0
+        height: col.implicitHeight + Theme.spacingL * 2
+        radius: Theme.cornerRadiusL
+        color: Theme.primaryContainer
+
+        Column {
+            id: col
+            x: Theme.spacingL
+            y: Theme.spacingL
+            width: parent.width - Theme.spacingL * 2
+            spacing: Theme.spacingS
+
+            Row {
+                id: head
+                width: parent.width
+                spacing: Theme.spacingM
+
+                Rectangle {
+                    width: 44
+                    height: 44
+                    radius: 22
+                    color: Qt.rgba(Theme.onPrimaryContainer.r, Theme.onPrimaryContainer.g,
+                                   Theme.onPrimaryContainer.b, 0.12)
+
+                    DankIcon {
+                        anchors.centerIn: parent
+                        name: hl.icon
+                        size: Theme.iconSize
+                        color: Theme.onPrimaryContainer
+                    }
+                }
+
+                Column {
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    StyledText {
+                        text: hl.value
+                        font.pixelSize: Theme.fontSizeXXLarge
+                        font.weight: Font.Bold
+                        color: Theme.onPrimaryContainer
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM)
+                    }
+                    StyledText {
+                        text: hl.caption
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.onPrimaryContainer
+                        opacity: 0.8
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM)
+                    }
+                }
+            }
+
+            Meter {
+                visible: hl.progress >= 0
+                width: parent.width
+                value: hl.progress
+            }
+        }
+    }
+
+    // Material 3 filled section card: an optional small header over a padded
+    // body column. Children of a `SectionCard { ... }` land in that body.
+    component SectionCard: StyledRect {
+        id: card
+
+        property string title: ""
+        property string icon: ""
+        property string caption: ""
+
+        default property alias content: body.data
+
+        width: parent ? parent.width : 0
+        height: layout.implicitHeight + Theme.spacingM * 2
+        radius: Theme.cornerRadiusL
+        color: Theme.surfaceContainer
+
+        Column {
+            id: layout
+            x: Theme.spacingM
+            y: Theme.spacingM
+            width: card.width - Theme.spacingM * 2
+            spacing: Theme.spacingS
+
+            Row {
+                visible: card.title !== "" || card.icon !== ""
+                width: parent.width
+                spacing: Theme.spacingS
+
+                DankIcon {
+                    visible: card.icon !== ""
+                    name: card.icon
+                    size: Theme.iconSize - 8
+                    color: Theme.primary
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                StyledText {
+                    visible: card.title !== ""
+                    text: card.title
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.Bold
+                    color: Theme.surfaceVariantText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            StyledText {
+                visible: card.caption !== ""
+                width: parent.width
+                text: card.caption
+                wrapMode: Text.WordWrap
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+            }
+
+            Column {
+                id: body
+                width: parent.width
+                spacing: Theme.spacingXS
+            }
+        }
+    }
+
     // Installed by install.sh (root-owned, referenced by the polkit policy).
     readonly property string ctl: "/usr/local/bin/dms-cpufreqctl"
 
@@ -54,7 +188,23 @@ PluginComponent {
         return (v === undefined || v === null || v === "") ? def : v
     }
 
-    property int coreColumns: parseInt(opt("coreColumns", "2"))
+    // GPU popout sections are individually toggleable (see CpuFreqSettings).
+    function gpuShow(section) { return opt("gpuShow" + section, true) !== false }
+
+    function intOpt(key, def, legacyKey) {
+        let raw = opt(key, undefined)
+        if ((raw === undefined || raw === null || raw === "") && legacyKey)
+            raw = opt(legacyKey, undefined)
+        const n = parseInt(raw)
+        return (isNaN(n) || n < 1) ? def : n
+    }
+
+    // Column count for each per-core grid, each configured in its own tab.
+    // `coreColumns` was the old shared setting; keep it as a fallback so an
+    // existing choice is not lost.
+    property int freqColumns: intOpt("freqColumns", 2, "coreColumns")
+    property int tempColumns: intOpt("tempColumns", 3)
+    property int usageColumns: intOpt("usageColumns", 2, "coreColumns")
 
     // ========================================================== state ======
     property var snap: null                      // last parsed status
@@ -89,10 +239,10 @@ PluginComponent {
     // ===================================================== availability ====
     function available(key) {
         switch (key) {
-        case "freq": return cpu !== null && cpu.hasFreq === true && cores.length > 0
-        case "temp": return cpu !== null && (cpu.temp.pkg !== null || cpu.temp.cores.length > 0)
-        case "usage": return cpu !== null
-        case "mem": return mem !== null
+        case "freq": return cpu != null && cpu.hasFreq === true && cores.length > 0
+        case "temp": return cpu != null && (cpu.temp.pkg != null || cpu.temp.cores.length > 0)
+        case "usage": return cpu != null
+        case "mem": return mem != null
         case "gpu": return gpus.length > 0
         case "fans": return fans.length > 0
         case "disk": return disks.length > 0
@@ -168,7 +318,7 @@ PluginComponent {
 
     // ============================================================ metrics ==
     function freqList() {
-        return cores.map(c => c.cur).filter(v => v !== null && v !== undefined)
+        return cores.map(c => c.cur).filter(v => v != null && v !== undefined)
     }
     function panelFreq() {
         const f = freqList()
@@ -189,15 +339,17 @@ PluginComponent {
 
     function pkgTemp() {
         if (!cpu || !cpu.temp) return null
-        if (cpu.temp.pkg !== null) return cpu.temp.pkg
+        if (cpu.temp.pkg != null) return cpu.temp.pkg
         if (cpu.temp.cores.length) return Math.max.apply(null, cpu.temp.cores.map(t => t.mc))
         return null
     }
     function tempCoreList() { return cpu && cpu.temp ? cpu.temp.cores : [] }
 
+    function memKB(kb) { return (kb === null || kb === undefined) ? 0 : kb * 1024 }
     function memUsedB() { return mem ? (mem.total - mem.avail) * 1024 : 0 }
     function memTotalB() { return mem ? mem.total * 1024 : 0 }
     function memPct() { return mem && mem.total > 0 ? 100 * (mem.total - mem.avail) / mem.total : 0 }
+    function memCachedKB() { return mem ? (mem.cached || 0) + (mem.sreclaimable || 0) : 0 }
 
     function gpuSel() {
         if (!gpus.length) return null
@@ -206,6 +358,43 @@ PluginComponent {
     }
     function gpuVramPct(g) { return g && g.vramTotal > 0 ? 100 * g.vramUsed / g.vramTotal : 0 }
     function gpuAsleep(g) { return g.state === "suspended" || g.state === "suspending" }
+    function fmtMhz(cur, max) {
+        if (cur === null || cur === undefined) return "–"
+        let s = cur + " MHz"
+        if (max != null && max !== undefined && max !== cur) s += " / " + max + " MHz"
+        return s
+    }
+    function fmtWatts(v) {
+        return (v === null || v === undefined) ? "–" : v.toFixed(1) + " W"
+    }
+    function gpuPowerText(g) {
+        if (!g || g.powerW === null || g.powerW === undefined) return "–"
+        let s = g.powerW.toFixed(1) + " W"
+        if (g.powerLimitW != null && g.powerLimitW !== undefined) s += " / " + g.powerLimitW.toFixed(0) + " W limit"
+        return s
+    }
+    function gpuPowerLimits(g) {
+        if (!g) return ""
+        const p = []
+        if (g.powerDefaultW != null && g.powerDefaultW !== undefined) p.push("default " + g.powerDefaultW.toFixed(0) + " W")
+        if (g.powerMinW != null && g.powerMinW !== undefined) p.push("min " + g.powerMinW.toFixed(0) + " W")
+        if (g.powerMaxW != null && g.powerMaxW !== undefined) p.push("max " + g.powerMaxW.toFixed(0) + " W")
+        return p.join(" · ")
+    }
+    function gpuPcieText(g) {
+        if (!g) return "–"
+        const one = (gen, width) => {
+            if (gen === null || gen === undefined) return width === null || width === undefined ? "" : "x" + width
+            return "Gen " + gen + (width === null || width === undefined ? "" : " x" + width)
+        }
+        const cur = one(g.pcieGen, g.pcieWidth)
+        const max = one(g.pcieGenMax, g.pcieWidthMax)
+        if (!cur) return "–"
+        return (max && max !== cur) ? cur + " (max " + max + ")" : cur
+    }
+    function gpuThrottle(g) {
+        return g && g.throttle ? g.throttle : "None"
+    }
 
     function fanRpm() {
         if (!fans.length) return null
@@ -233,6 +422,8 @@ PluginComponent {
             const sc = opt("memScale", "auto")
             if (d === "percent") return Math.round(memPct()) + (u ? "%" : "")
             if (d === "used") return fmtBytes(memUsedB(), sc, u)
+            if (d === "available") return fmtBytes(memKB(mem.avail), sc, u)
+            if (d === "free") return fmtBytes(memKB(mem.free), sc, u)
             return fmtBytesPair(memUsedB(), memTotalB(), sc, u)
         }
         if (key === "gpu") {
@@ -241,6 +432,8 @@ PluginComponent {
             const d = opt("gpuDisplay", "usage")
             if (d === "temp") return g.temp === null ? "–" : fmtTemp(g.temp, !u)
             if (d === "vram") return g.vramTotal > 0 ? Math.round(gpuVramPct(g)) + (u ? "%" : "") : "–"
+            if (d === "power") return (g.powerW === null || g.powerW === undefined) ? "–" : g.powerW.toFixed(1) + (u ? " W" : "")
+            if (d === "clock") return (g.freq === null || g.freq === undefined) ? "–" : g.freq + (u ? " MHz" : "")
             return g.usage === null ? "–" : g.usage + (u ? "%" : "")
         }
         if (key === "fans") {
@@ -627,20 +820,11 @@ PluginComponent {
 
                         // ================================== frequency ====
                         Column {
-                            visible: pop.activeTab === "freq" && root.cpu !== null
+                            visible: pop.activeTab === "freq" && root.cpu != null
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            SwitchRow {
-                                visible: root.cpu !== null && root.cpu.turboSupported === true
-                                width: parent.width
-                                icon: "bolt"
-                                label: "Turbo boost"
-                                checked: root.cpu !== null && root.cpu.turbo === true
-                                onToggled: value => root.setTurbo(value)
-                            }
-
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "speed"
                                 value: root.fmtFreq(root.panelFreq(), false)
@@ -648,55 +832,69 @@ PluginComponent {
                                 progress: root.freqFraction(root.panelFreq())
                             }
 
-                            Column {
+                            SectionCard {
                                 width: parent.width
-                                spacing: Theme.spacingXS
+                                title: "Performance"
+                                icon: "tune"
 
-                                FieldLabel { text: "Profile"; icon: "tune" }
-                                SegmentedControl {
+                                SwitchRow {
+                                    visible: root.cpu != null && root.cpu.turboSupported === true
                                     width: parent.width
-                                    options: root.profileOptions
-                                    current: root.activeProfile()
-                                    onSelected: value => root.applyPreset(value)
+                                    icon: "bolt"
+                                    label: "Turbo boost"
+                                    checked: root.cpu != null && root.cpu.turbo === true
+                                    onToggled: value => root.setTurbo(value)
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: Theme.spacingXS
+
+                                    FieldLabel { text: "Profile"; icon: "tune" }
+                                    SegmentedControl {
+                                        width: parent.width
+                                        options: root.profileOptions
+                                        current: root.activeProfile()
+                                        onSelected: value => root.applyPreset(value)
+                                    }
+                                }
+
+                                Column {
+                                    visible: root.governorOptions.length > 0
+                                    width: parent.width
+                                    spacing: Theme.spacingXS
+
+                                    FieldLabel { text: "Governor"; icon: "settings_suggest" }
+                                    SegmentedControl {
+                                        width: parent.width
+                                        options: root.governorOptions
+                                        current: root.cpu ? root.cpu.governor : ""
+                                        onSelected: value => root.setGovernor(value)
+                                    }
+                                }
+
+                                Column {
+                                    visible: root.eppOptions.length > 0
+                                    width: parent.width
+                                    spacing: Theme.spacingXS
+
+                                    FieldLabel { text: "Energy preference"; icon: "battery_charging_full" }
+                                    SegmentedControl {
+                                        width: parent.width
+                                        maxPerRow: 4      // five options -> 3 + 2, wide enough for icons
+                                        options: root.eppOptions
+                                        current: root.cpu ? root.cpu.epp : ""
+                                        onSelected: value => root.setEpp(value)
+                                    }
                                 }
                             }
 
-                            Column {
-                                visible: root.governorOptions.length > 0
-                                width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Governor"; icon: "settings_suggest" }
-                                SegmentedControl {
-                                    width: parent.width
-                                    options: root.governorOptions
-                                    current: root.cpu ? root.cpu.governor : ""
-                                    onSelected: value => root.setGovernor(value)
-                                }
-                            }
-
-                            Column {
-                                visible: root.eppOptions.length > 0
-                                width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Energy preference"; icon: "battery_charging_full" }
-                                SegmentedControl {
-                                    width: parent.width
-                                    maxPerRow: 4          // five options -> 3 + 2, wide enough for icons
-                                    options: root.eppOptions
-                                    current: root.cpu ? root.cpu.epp : ""
-                                    onSelected: value => root.setEpp(value)
-                                }
-                            }
-
-                            Column {
-                                visible: root.cpu !== null && root.cpu.hwMax > root.cpu.hwMin
+                            SectionCard {
+                                visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
                                          && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
                                 width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Scaling frequency"; icon: "swap_vert" }
+                                title: "Frequency limits"
+                                icon: "swap_vert"
 
                                 SliderRow {
                                     id: minRow
@@ -727,23 +925,23 @@ PluginComponent {
                                 }
                             }
 
-                            Column {
+                            SectionCard {
                                 visible: root.cores.length > 0 && root.opt("freqCores", true)
                                 width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Cores"; icon: "developer_board" }
+                                title: "Per-core frequency"
+                                icon: "developer_board"
 
                                 Grid {
+                                    id: freqGrid
                                     width: parent.width
-                                    columns: root.coreColumns
+                                    columns: root.freqColumns
                                     columnSpacing: Theme.spacingM
                                     rowSpacing: Theme.spacingXS
 
                                     Repeater {
                                         model: root.cores.length
                                         delegate: StatRow {
-                                            width: (pages.width - (root.coreColumns - 1) * Theme.spacingM) / root.coreColumns
+                                            width: (freqGrid.width - (root.freqColumns - 1) * Theme.spacingM) / root.freqColumns
                                             label: "C" + root.coreId(index)
                                             value: root.fmtFreq(root.coreFreq(index), false)
                                             progress: root.freqFraction(root.coreFreq(index))
@@ -755,33 +953,43 @@ PluginComponent {
 
                         // ================================ temperature ====
                         Column {
-                            visible: pop.activeTab === "temp" && root.cpu !== null
+                            visible: pop.activeTab === "temp" && root.cpu != null
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "thermostat"
                                 value: root.fmtTemp(root.pkgTemp(), false)
                                 caption: "CPU package"
+                                         + (root.cpu && root.cpu.physicalCores > 0
+                                            ? " · " + root.cpu.physicalCores + " cores, " + root.cpu.threads + " threads"
+                                            : "")
                                 progress: root.pkgTemp() === null ? -1 : root.clamp100(root.pkgTemp() / 1000)
                             }
 
-                            Column {
-                                visible: root.tempCoreList().length > 0
+                            SectionCard {
+                                visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
-                                spacing: Theme.spacingXS
+                                title: "Physical cores"
+                                icon: "developer_board"
 
-                                FieldLabel { text: "Cores"; icon: "developer_board" }
+                                Grid {
+                                    id: tempGrid
+                                    width: parent.width
+                                    columns: root.tempColumns
+                                    columnSpacing: Theme.spacingM
+                                    rowSpacing: Theme.spacingXS
 
-                                Repeater {
-                                    model: root.tempCoreList().length
-                                    delegate: StatRow {
-                                        width: pages.width
-                                        icon: "thermostat"
-                                        label: "Core " + (root.tempCoreList()[index] ? root.tempCoreList()[index].id : index)
-                                        value: root.tempCoreList()[index] ? root.fmtTemp(root.tempCoreList()[index].mc, false) : "–"
-                                        progress: root.tempCoreList()[index] ? root.clamp100(root.tempCoreList()[index].mc / 1000) : -1
+                                    Repeater {
+                                        model: root.tempCoreList().length
+                                        delegate: StatRow {
+                                            width: (tempGrid.width - (root.tempColumns - 1) * Theme.spacingM) / root.tempColumns
+                                            icon: "thermostat"
+                                            label: "Core " + (root.tempCoreList()[index] ? root.tempCoreList()[index].id : index)
+                                            value: root.tempCoreList()[index] ? root.fmtTemp(root.tempCoreList()[index].mc, false) : "–"
+                                            progress: root.tempCoreList()[index] ? root.clamp100(root.tempCoreList()[index].mc / 1000) : -1
+                                        }
                                     }
                                 }
                             }
@@ -798,11 +1006,11 @@ PluginComponent {
 
                         // ===================================== usage =====
                         Column {
-                            visible: pop.activeTab === "usage" && root.cpu !== null
+                            visible: pop.activeTab === "usage" && root.cpu != null
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "memory"
                                 value: Math.round(root.usageAll) + "%"
@@ -810,23 +1018,23 @@ PluginComponent {
                                 progress: root.usageAll
                             }
 
-                            Column {
+                            SectionCard {
                                 visible: root.cores.length > 0
                                 width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Cores"; icon: "developer_board" }
+                                title: "Per-core usage"
+                                icon: "developer_board"
 
                                 Grid {
+                                    id: usageGrid
                                     width: parent.width
-                                    columns: root.coreColumns
+                                    columns: root.usageColumns
                                     columnSpacing: Theme.spacingM
                                     rowSpacing: Theme.spacingXS
 
                                     Repeater {
                                         model: root.cores.length
                                         delegate: StatRow {
-                                            width: (pages.width - (root.coreColumns - 1) * Theme.spacingM) / root.coreColumns
+                                            width: (usageGrid.width - (root.usageColumns - 1) * Theme.spacingM) / root.usageColumns
                                             label: "C" + root.coreId(index)
                                             value: Math.round(root.coreUsage(index)) + "%"
                                             progress: root.coreUsage(index)
@@ -838,11 +1046,11 @@ PluginComponent {
 
                         // ======================================= RAM =====
                         Column {
-                            visible: pop.activeTab === "mem" && root.mem !== null
+                            visible: pop.activeTab === "mem" && root.mem != null
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "developer_board"
                                 value: root.fmtBytes(root.memUsedB(), root.opt("memScale", "auto"), true)
@@ -850,21 +1058,51 @@ PluginComponent {
                                 progress: root.memPct()
                             }
 
-                            Column {
+                            SectionCard {
                                 width: parent.width
-                                spacing: Theme.spacingXS
+                                title: "Memory"
+                                icon: "memory"
 
                                 StatRow {
                                     width: parent.width
                                     icon: "memory"
                                     label: "Used"
                                     value: root.fmtBytes(root.memUsedB(), root.opt("memScale", "auto"), true)
+                                    progress: root.memPct()
                                 }
                                 StatRow {
                                     width: parent.width
                                     icon: "check_circle"
                                     label: "Available"
-                                    value: root.mem ? root.fmtBytes(root.mem.avail * 1024, root.opt("memScale", "auto"), true) : "–"
+                                    value: root.fmtBytes(root.memKB(root.mem ? root.mem.avail : 0), root.opt("memScale", "auto"), true)
+                                }
+                                StatRow {
+                                    visible: root.mem != null && root.mem.free != null
+                                    width: parent.width
+                                    icon: "cloud"
+                                    label: "Free"
+                                    value: root.fmtBytes(root.memKB(root.mem ? root.mem.free : 0), root.opt("memScale", "auto"), true)
+                                }
+                                StatRow {
+                                    visible: root.mem != null && root.mem.cached != null
+                                    width: parent.width
+                                    icon: "cached"
+                                    label: "Cached"
+                                    value: root.fmtBytes(root.memCachedKB() * 1024, root.opt("memScale", "auto"), true)
+                                }
+                                StatRow {
+                                    visible: root.mem != null && root.mem.buffers > 0
+                                    width: parent.width
+                                    icon: "inventory_2"
+                                    label: "Buffers"
+                                    value: root.fmtBytes(root.memKB(root.mem ? root.mem.buffers : 0), root.opt("memScale", "auto"), true)
+                                }
+                                StatRow {
+                                    visible: root.mem != null && root.mem.shared > 0
+                                    width: parent.width
+                                    icon: "share"
+                                    label: "Shared"
+                                    value: root.fmtBytes(root.memKB(root.mem ? root.mem.shared : 0), root.opt("memScale", "auto"), true)
                                 }
                                 StatRow {
                                     width: parent.width
@@ -872,13 +1110,29 @@ PluginComponent {
                                     label: "Total"
                                     value: root.fmtBytes(root.memTotalB(), root.opt("memScale", "auto"), true)
                                 }
+                            }
+
+                            SectionCard {
+                                visible: root.mem != null && (root.mem.swapTotal > 0 || root.mem.zramTotal > 0)
+                                width: parent.width
+                                title: "Swap & compression"
+                                icon: "swap_horiz"
+
                                 StatRow {
-                                    visible: root.mem !== null && root.mem.swapTotal > 0
+                                    visible: root.mem != null && root.mem.swapTotal > 0
                                     width: parent.width
                                     icon: "swap_horiz"
                                     label: "Swap"
                                     value: root.mem ? root.fmtBytesPair((root.mem.swapTotal - root.mem.swapFree) * 1024, root.mem.swapTotal * 1024, root.opt("memScale", "auto"), true) : ""
                                     progress: root.mem && root.mem.swapTotal > 0 ? 100 * (root.mem.swapTotal - root.mem.swapFree) / root.mem.swapTotal : -1
+                                }
+                                StatRow {
+                                    visible: root.mem != null && root.mem.zramTotal > 0
+                                    width: parent.width
+                                    icon: "compress"
+                                    label: "ZRAM"
+                                    value: root.mem ? root.fmtBytesPair(root.memKB(root.mem.zramUsed), root.memKB(root.mem.zramTotal), root.opt("memScale", "auto"), true) : ""
+                                    progress: root.mem && root.mem.zramTotal > 0 ? 100 * root.mem.zramUsed / root.mem.zramTotal : -1
                                 }
                             }
                         }
@@ -895,64 +1149,287 @@ PluginComponent {
                                 delegate: Column {
                                     id: gpuCol
                                     readonly property var g: root.gpus[index] ? root.gpus[index] : null
+                                    readonly property var procs: (g && g.procs) ? g.procs : []
 
                                     width: pages.width
-                                    spacing: Theme.spacingXS
+                                    spacing: Theme.spacingL
 
-                                    Headline {
+                                    HeroCard {
                                         width: parent.width
                                         icon: "auto_awesome_mosaic"
                                         value: gpuCol.g ? gpuCol.g.name : ""
                                         caption: gpuCol.g ? (root.gpuAsleep(gpuCol.g)
                                                  ? gpuCol.g.driver + " · powered down (not woken to read stats)"
-                                                 : gpuCol.g.driver) : ""
-                                        progress: gpuCol.g && gpuCol.g.usage !== null ? gpuCol.g.usage : -1
+                                                 : gpuCol.g.driver
+                                                   + (gpuCol.g.driverVersion ? " " + gpuCol.g.driverVersion : "")) : ""
+                                        progress: gpuCol.g && gpuCol.g.usage != null ? gpuCol.g.usage : -1
                                     }
 
-                                    StatRow {
-                                        visible: gpuCol.g !== null && gpuCol.g.usage !== null
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Util")
+                                                 && (gpuCol.g.usage != null || gpuCol.g.usageMem != null
+                                                     || gpuCol.g.usageEnc != null || gpuCol.g.usageDec != null)
                                         width: parent.width
+                                        title: "Utilization"
                                         icon: "show_chart"
-                                        label: "Usage"
-                                        value: gpuCol.g && gpuCol.g.usage !== null ? gpuCol.g.usage + "%" : ""
+
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.usage != null
+                                            width: parent.width
+                                            icon: "show_chart"
+                                            label: "GPU"
+                                            value: gpuCol.g ? gpuCol.g.usage + "%" : ""
+                                            progress: gpuCol.g ? gpuCol.g.usage : -1
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.usageMem != null
+                                            width: parent.width
+                                            icon: "memory"
+                                            label: "Memory controller"
+                                            value: gpuCol.g ? gpuCol.g.usageMem + "%" : ""
+                                            progress: gpuCol.g ? gpuCol.g.usageMem : -1
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.usageEnc != null
+                                            width: parent.width
+                                            icon: "videocam"
+                                            label: "Encoder"
+                                            value: gpuCol.g ? gpuCol.g.usageEnc + "%" : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.usageDec != null
+                                            width: parent.width
+                                            icon: "movie"
+                                            label: "Decoder"
+                                            value: gpuCol.g ? gpuCol.g.usageDec + "%" : ""
+                                        }
                                     }
-                                    StatRow {
-                                        visible: gpuCol.g !== null && gpuCol.g.vramTotal !== null && gpuCol.g.vramTotal > 0
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Mem")
+                                                 && gpuCol.g.vramTotal != null && gpuCol.g.vramTotal > 0
                                         width: parent.width
+                                        title: "Memory"
                                         icon: "developer_board"
-                                        label: "VRAM"
-                                        value: gpuCol.g && gpuCol.g.vramTotal > 0 ? root.fmtBytesPair(gpuCol.g.vramUsed, gpuCol.g.vramTotal, "auto", true) : ""
-                                        progress: gpuCol.g ? root.gpuVramPct(gpuCol.g) : -1
+
+                                        StatRow {
+                                            width: parent.width
+                                            icon: "developer_board"
+                                            label: "VRAM"
+                                            value: gpuCol.g ? root.fmtBytesPair(gpuCol.g.vramUsed, gpuCol.g.vramTotal, "auto", true) : ""
+                                            progress: gpuCol.g ? root.gpuVramPct(gpuCol.g) : -1
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.vramFree != null
+                                            width: parent.width
+                                            icon: "cloud"
+                                            label: "VRAM free"
+                                            value: gpuCol.g ? root.fmtBytes(gpuCol.g.vramFree, "auto", true) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.vramReserved != null && gpuCol.g.vramReserved > 0
+                                            width: parent.width
+                                            icon: "lock"
+                                            label: "VRAM reserved"
+                                            value: gpuCol.g ? root.fmtBytes(gpuCol.g.vramReserved, "auto", true) : ""
+                                        }
                                     }
-                                    StatRow {
-                                        visible: gpuCol.g !== null && gpuCol.g.temp !== null
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Thermals")
+                                                 && !!(gpuCol.g.temp != null || gpuCol.g.tempMem != null
+                                                      || gpuCol.g.tempLimit != null || gpuCol.g.fanRpm != null
+                                                      || gpuCol.g.fanPct != null || gpuCol.g.throttle)
                                         width: parent.width
+                                        title: "Thermals"
                                         icon: "thermostat"
-                                        label: "Temperature"
-                                        value: gpuCol.g ? root.fmtTemp(gpuCol.g.temp, false) : ""
+
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.temp != null
+                                            width: parent.width
+                                            icon: "thermostat"
+                                            label: "GPU"
+                                            value: gpuCol.g ? root.fmtTemp(gpuCol.g.temp, false) : ""
+                                            progress: gpuCol.g ? root.clamp100(gpuCol.g.temp / 1000) : -1
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.tempMem != null
+                                            width: parent.width
+                                            icon: "thermostat"
+                                            label: "Memory"
+                                            value: gpuCol.g ? root.fmtTemp(gpuCol.g.tempMem, false) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.tempLimit != null
+                                            width: parent.width
+                                            icon: "dangerous"
+                                            label: "Shutdown limit"
+                                            value: gpuCol.g ? root.fmtTemp(gpuCol.g.tempLimit, false) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && (gpuCol.g.fanRpm != null || gpuCol.g.fanPct != null)
+                                            width: parent.width
+                                            icon: "mode_fan"
+                                            label: "Fan"
+                                            value: !gpuCol.g ? "" : ((gpuCol.g.fanRpm != null ? gpuCol.g.fanRpm + " RPM" : "")
+                                                   + (gpuCol.g.fanRpm != null && gpuCol.g.fanPct != null ? "  " : "")
+                                                   + (gpuCol.g.fanPct != null ? gpuCol.g.fanPct + "%" : ""))
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.throttle
+                                            width: parent.width
+                                            icon: "slow_motion_video"
+                                            label: "Clock limiters"
+                                            value: root.gpuThrottle(gpuCol.g)
+                                        }
                                     }
-                                    StatRow {
-                                        visible: gpuCol.g !== null && (gpuCol.g.fanRpm !== null || gpuCol.g.fanPct !== null)
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Power")
+                                                 && (gpuCol.g.powerW != null || root.gpuPowerLimits(gpuCol.g) !== "")
                                         width: parent.width
-                                        icon: "mode_fan"
-                                        label: "Fan"
-                                        value: gpuCol.g ? ((gpuCol.g.fanRpm !== null ? gpuCol.g.fanRpm + " RPM" : "")
-                                               + (gpuCol.g.fanRpm !== null && gpuCol.g.fanPct !== null ? "  " : "")
-                                               + (gpuCol.g.fanPct !== null ? gpuCol.g.fanPct + "%" : "")) : ""
-                                    }
-                                    StatRow {
-                                        visible: gpuCol.g !== null && gpuCol.g.freq !== null
-                                        width: parent.width
-                                        icon: "speed"
-                                        label: "Clock"
-                                        value: gpuCol.g && gpuCol.g.freq !== null ? gpuCol.g.freq + " MHz" : ""
-                                    }
-                                    StatRow {
-                                        visible: gpuCol.g !== null && gpuCol.g.powerW !== null
-                                        width: parent.width
+                                        title: "Power"
                                         icon: "bolt"
-                                        label: "Power"
-                                        value: gpuCol.g && gpuCol.g.powerW !== null ? gpuCol.g.powerW.toFixed(1) + " W" : ""
+
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.powerW != null
+                                            width: parent.width
+                                            icon: "bolt"
+                                            label: "Draw"
+                                            value: root.gpuPowerText(gpuCol.g)
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && root.gpuPowerLimits(gpuCol.g) !== ""
+                                            width: parent.width
+                                            icon: "tune"
+                                            label: "Limits"
+                                            value: root.gpuPowerLimits(gpuCol.g)
+                                        }
+                                    }
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Clocks")
+                                                 && !!(gpuCol.g.freq != null || gpuCol.g.freqMem != null
+                                                      || gpuCol.g.freqSm != null || gpuCol.g.freqVideo != null
+                                                      || gpuCol.g.pstate)
+                                        width: parent.width
+                                        title: "Clocks"
+                                        icon: "speed"
+
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.freq != null
+                                            width: parent.width
+                                            icon: "speed"
+                                            label: "Graphics"
+                                            value: gpuCol.g ? root.fmtMhz(gpuCol.g.freq, gpuCol.g.freqMax) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.freqMem != null
+                                            width: parent.width
+                                            icon: "memory"
+                                            label: "Memory"
+                                            value: gpuCol.g ? root.fmtMhz(gpuCol.g.freqMem, gpuCol.g.freqMaxMem) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.freqSm != null
+                                            width: parent.width
+                                            icon: "developer_board"
+                                            label: "SM"
+                                            value: gpuCol.g ? root.fmtMhz(gpuCol.g.freqSm, gpuCol.g.freqMaxSm) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.freqVideo != null
+                                            width: parent.width
+                                            icon: "movie"
+                                            label: "Video"
+                                            value: gpuCol.g ? root.fmtMhz(gpuCol.g.freqVideo, null) : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.pstate
+                                            width: parent.width
+                                            icon: "bolt"
+                                            label: "Performance state"
+                                            value: gpuCol.g ? gpuCol.g.pstate : ""
+                                        }
+                                    }
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Bus")
+                                                 && !!(gpuCol.g.pcieGen != null || gpuCol.g.vbios
+                                                      || gpuCol.g.persistence || gpuCol.g.computeMode
+                                                      || gpuCol.g.uuid || gpuCol.g.serial)
+                                        width: parent.width
+                                        title: "Bus & driver"
+                                        icon: "cable"
+
+                                        StatRow {
+                                            visible: gpuCol.g != null && gpuCol.g.pcieGen != null
+                                            width: parent.width
+                                            icon: "cable"
+                                            label: "PCIe link"
+                                            value: root.gpuPcieText(gpuCol.g)
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.vbios
+                                            width: parent.width
+                                            icon: "memory"
+                                            label: "VBIOS"
+                                            value: gpuCol.g ? gpuCol.g.vbios : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.persistence
+                                            width: parent.width
+                                            icon: "keep"
+                                            label: "Persistence mode"
+                                            value: gpuCol.g ? gpuCol.g.persistence : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!(gpuCol.g.displayActive || gpuCol.g.displayAttached)
+                                            width: parent.width
+                                            icon: "monitor"
+                                            label: "Display"
+                                            value: !gpuCol.g ? "" : ("active: " + (gpuCol.g.displayActive || "–")
+                                                   + " · attached: " + (gpuCol.g.displayAttached || "–"))
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.computeMode
+                                            width: parent.width
+                                            icon: "settings"
+                                            label: "Compute mode"
+                                            value: gpuCol.g ? gpuCol.g.computeMode : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.uuid
+                                            width: parent.width
+                                            icon: "fingerprint"
+                                            label: "UUID"
+                                            value: gpuCol.g ? gpuCol.g.uuid : ""
+                                        }
+                                        StatRow {
+                                            visible: gpuCol.g != null && !!gpuCol.g.serial
+                                            width: parent.width
+                                            icon: "tag"
+                                            label: "Serial"
+                                            value: gpuCol.g ? gpuCol.g.serial : ""
+                                        }
+                                    }
+
+                                    SectionCard {
+                                        visible: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
+                                        width: parent.width
+                                        title: "Processes"
+                                        icon: "list"
+
+                                        Repeater {
+                                            model: gpuCol.procs.length
+                                            delegate: StatRow {
+                                                readonly property var p: gpuCol.procs[index] ? gpuCol.procs[index] : null
+                                                width: parent.width
+                                                icon: "apps"
+                                                label: p ? (p.name + " (" + p.pid + ")") : ""
+                                                value: p && p.mem != null ? root.fmtBytes(p.mem, "auto", true) : ""
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -962,23 +1439,24 @@ PluginComponent {
                         Column {
                             visible: pop.activeTab === "fans" && root.fans.length > 0
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "mode_fan"
                                 value: root.fanRpm() === null ? "–" : Math.round(root.fanRpm()) + " RPM"
                                 caption: root.opt("fansDisplay", "max") === "avg" ? "Average fan speed" : "Fastest fan"
                             }
 
-                            Column {
+                            SectionCard {
                                 width: parent.width
-                                spacing: Theme.spacingXS
+                                title: "Fans"
+                                icon: "mode_fan"
 
                                 Repeater {
                                     model: root.fans.length
                                     delegate: StatRow {
-                                        width: pages.width
+                                        width: parent.width
                                         icon: "mode_fan"
                                         label: root.fans[index] ? root.fans[index].label : ""
                                         value: root.fans[index] ? root.fans[index].rpm + " RPM" : ""
@@ -991,9 +1469,9 @@ PluginComponent {
                         Column {
                             visible: pop.activeTab === "disk" && root.disks.length > 0
                             width: parent.width
-                            spacing: Theme.spacingM
+                            spacing: Theme.spacingL
 
-                            Headline {
+                            HeroCard {
                                 width: parent.width
                                 icon: "storage"
                                 value: root.diskSel() ? Math.round(root.diskPct(root.diskSel())) + "% used" : "–"
@@ -1004,17 +1482,16 @@ PluginComponent {
                                 progress: root.diskSel() ? root.diskPct(root.diskSel()) : -1
                             }
 
-                            Column {
+                            SectionCard {
                                 width: parent.width
-                                spacing: Theme.spacingXS
-
-                                FieldLabel { text: "Filesystems"; icon: "storage" }
+                                title: "Filesystems"
+                                icon: "storage"
 
                                 Repeater {
                                     model: root.disks.length
                                     delegate: StatRow {
                                         readonly property var d: root.disks[index] ? root.disks[index] : null
-                                        width: pages.width
+                                        width: parent.width
                                         icon: "storage"
                                         label: d ? d.mount : ""
                                         value: d ? root.fmtBytesPair(d.used, d.used + d.avail, root.opt("diskScale", "auto"), true) : ""

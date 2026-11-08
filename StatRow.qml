@@ -44,6 +44,8 @@ Column {
             text: row.value
             font.pixelSize: Theme.fontSizeMedium
             color: Theme.surfaceVariantText
+            width: Math.max(0, Math.min(implicitWidth, parent.width - left.width - Theme.spacingM))
+            elide: Text.ElideRight
         }
     }
 

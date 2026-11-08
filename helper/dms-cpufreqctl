@@ -20,6 +20,10 @@ is_uint() { [[ ${1:-} =~ ^[0-9]+$ ]]; }
 num() { if is_uint "${1:-}"; then printf '%s' "$((10#$1))"; else printf 'null'; fi; }
 numf() { if [[ ${1:-} =~ ^[0-9]+(\.[0-9]+)?$ ]]; then printf '%s' "$1"; else printf 'null'; fi; }
 trim() { local s=$1; s=${s#"${s%%[![:space:]]*}"}; s=${s%"${s##*[![:space:]]}"}; printf '%s' "$s"; }
+# nstr: trim + map nvidia-smi's N/A placeholders to an empty string
+nstr() { local s; s=$(trim "${1:-}"); case $s in "N/A"|"[N/A]") printf '';; *) printf '%s' "$s";; esac; }
+# microwatts -> "12.34"
+uw() { local n; n=$(num "${1:-}"); [ "$n" = null ] && return 0; printf '%s.%02d' "$((n / 1000000))" "$(((n % 1000000) / 10000))"; }
 jstr() { local s=${1//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/ }; printf '"%s"' "$s"; }
 jlist() {
   local first=1 w
@@ -113,17 +117,21 @@ emit_cpu() {
     "$(num "$hmin")" "$(num "$hmax")" "$(num "$smin")" "$(num "$smax")"
 
   printf '"cores":['
-  local first=1 d id cur cid
+  local first=1 d id cur cid nthreads=0 nphys=0 seen=" "
   while read -r d; do
     [ -r "$d/cpufreq/scaling_cur_freq" ] || continue
     id=${d##*/cpu}
     cur=$(rd "$d/cpufreq/scaling_cur_freq")
     cid=$(rd "$d/topology/core_id")
+    nthreads=$((nthreads + 1))
+    if [ -n "$cid" ]; then
+      case $seen in *" $cid "*) ;; *) seen+="$cid "; nphys=$((nphys + 1)) ;; esac
+    fi
     ((first)) || printf ','
     first=0
     printf '{"id":%s,"cur":%s,"cid":%s}' "$id" "$(num "$cur")" "$(num "$cid")"
   done < <(printf '%s\n' "$CPU"/cpu[0-9]* | sort -V)
-  printf '],"temp":'
+  printf '],"threads":%s,"physicalCores":%s,"temp":' "$nthreads" "$nphys"
   emit_temps
   printf ',"stat":'
   emit_stat
@@ -131,17 +139,34 @@ emit_cpu() {
 }
 
 emit_mem() {
-  local k v rest total=0 avail=0 swt=0 swf=0
+  local k v rest total=0 avail=0 free=0 buffers=0 cached=0 sreclaim=0 shared=0
+  local dirty=0 slab=0 swt=0 swf=0 ztot=0 zused=0 z d
   while read -r k v rest; do
     case $k in
       MemTotal:) total=$v ;;
       MemAvailable:) avail=$v ;;
+      MemFree:) free=$v ;;
+      Buffers:) buffers=$v ;;
+      Cached:) cached=$v ;;
+      SReclaimable:) sreclaim=$v ;;
+      Shmem:) shared=$v ;;
+      Dirty:) dirty=$v ;;
+      Slab:) slab=$v ;;
       SwapTotal:) swt=$v ;;
       SwapFree:) swf=$v ;;
     esac
   done </proc/meminfo
-  printf '"mem":{"total":%s,"avail":%s,"swapTotal":%s,"swapFree":%s}' \
-    "$(num "$total")" "$(num "$avail")" "$(num "$swt")" "$(num "$swf")"
+  # zram shows up as a block device, not in /proc/meminfo
+  for z in /sys/block/zram*; do
+    [ -r "$z/disksize" ] || continue
+    d=$(rd "$z/disksize"); is_uint "$d" && ztot=$((ztot + d / 1024))
+    d=$(rd "$z/mem_used_total"); is_uint "$d" && zused=$((zused + d / 1024))
+  done
+  printf '"mem":{"total":%s,"avail":%s,"free":%s,"buffers":%s,"cached":%s,"shared":%s,"dirty":%s,"slab":%s,"sreclaimable":%s,"swapTotal":%s,"swapFree":%s,"swapUsed":%s,"zramTotal":%s,"zramUsed":%s}' \
+    "$(num "$total")" "$(num "$avail")" "$(num "$free")" "$(num "$buffers")" \
+    "$(num "$cached")" "$(num "$shared")" "$(num "$dirty")" "$(num "$slab")" \
+    "$(num "$sreclaim")" "$(num "$swt")" "$(num "$swf")" "$(num "$((swt - swf))")" \
+    "$(num "$ztot")" "$(num "$zused")"
 }
 
 emit_fans() {
@@ -190,7 +215,12 @@ emit_disks() {
 
 emit_gpus() {
   local out="" first=1 c base dev vendor driver state slot name
-  local usage vu vt temp fanrpm fanpct freq powerw hw v
+  local usage usageMem usageEnc usageDec vu vt vfree vres temp tempMem tempLimit
+  local fanrpm fanpct freq freqMem freqSm freqVideo freqMax freqMaxMem freqMaxSm
+  local powerw plimit pdefault pmin pmax pstate pcieGen pcieGenMax pcieWidth pcieWidthMax
+  local driverVersion vbios persistence displayActive displayAttached computeMode uuid serial
+  local throttles procs hw v line nn
+  local -a f
   for c in "$DRM"/card[0-9]*; do
     base=${c##*/}
     [[ $base =~ ^card[0-9]+$ ]] || continue
@@ -202,7 +232,14 @@ emit_gpus() {
     [ -e "$dev/driver" ] && driver=$(basename "$(readlink -f "$dev/driver")")
     state=$(rd "$dev/power/runtime_status")
     slot=$(grep -m1 '^PCI_SLOT_NAME=' "$dev/uevent" 2>/dev/null | cut -d= -f2)
-    usage=""; vu=""; vt=""; temp=""; fanrpm=""; fanpct=""; freq=""; powerw=""
+
+    usage=""; usageMem=""; usageEnc=""; usageDec=""; vu=""; vt=""; vfree=""; vres=""
+    temp=""; tempMem=""; tempLimit=""; fanrpm=""; fanpct=""; freq=""; freqMem=""
+    freqSm=""; freqVideo=""; freqMax=""; freqMaxMem=""; freqMaxSm=""
+    powerw=""; plimit=""; pdefault=""; pmin=""; pmax=""
+    pstate=""; pcieGen=""; pcieGenMax=""; pcieWidth=""; pcieWidthMax=""
+    driverVersion=""; vbios=""; persistence=""; displayActive=""; displayAttached=""
+    computeMode=""; uuid=""; serial=""; throttles=""; procs=""
 
     case $vendor in
       0x10de) name="NVIDIA GPU" ;;
@@ -220,6 +257,7 @@ emit_gpus() {
       vt=$(rd "$dev/mem_info_vram_total")
       # Intel i915
       v=$(rd "$c/gt_cur_freq_mhz"); [ -n "$v" ] && freq=$v
+      v=$(rd "$c/gt_max_freq_mhz"); [ -n "$v" ] && freqMax=$v
       # generic hwmon exposed by the driver
       for hw in "$dev"/hwmon/hwmon*; do
         v=$(rd "$hw/temp1_input");   is_uint "$v" && temp=$v
@@ -227,36 +265,117 @@ emit_gpus() {
         v=$(rd "$hw/pwm1");          is_uint "$v" && fanpct=$((v * 100 / 255))
         v=$(rd "$hw/freq1_input");   is_uint "$v" && freq=$((v / 1000000))
         v=$(rd "$hw/power1_average"); [ -n "$v" ] || v=$(rd "$hw/power1_input")
-        if is_uint "$v"; then powerw="$((v / 1000000)).$(printf '%02d' $(((v % 1000000) / 10000)))"; fi
+        is_uint "$v" && powerw=$(uw "$v")
+        v=$(rd "$hw/power1_cap");         is_uint "$v" && plimit=$(uw "$v")
+        v=$(rd "$hw/power1_cap_default"); is_uint "$v" && pdefault=$(uw "$v")
+        v=$(rd "$hw/power1_cap_min");     is_uint "$v" && pmin=$(uw "$v")
+        v=$(rd "$hw/power1_cap_max");     is_uint "$v" && pmax=$(uw "$v")
         break
       done
 
       # NVIDIA proprietary driver: only via nvidia-smi
       if [ "$vendor" = 0x10de ] && [ -n "$slot" ] && command -v nvidia-smi >/dev/null 2>&1; then
-        local line nn nu nmu nmt nt nf np ng
+        # Full query first; older drivers reject newer fields wholesale, so fall
+        # back to the small set this plugin has always used.
         line=$(timeout 3 nvidia-smi -i "$slot" \
-          --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed,power.draw,clocks.gr \
+          --query-gpu=name,driver_version,utilization.gpu,utilization.memory,utilization.encoder,utilization.decoder,memory.total,memory.used,memory.free,memory.reserved,temperature.gpu,temperature.memory,temperature.gpu.tlimit,fan.speed,power.draw,power.limit,power.default_limit,power.min_limit,power.max_limit,clocks.current.graphics,clocks.current.memory,clocks.current.sm,clocks.current.video,clocks.max.graphics,clocks.max.memory,clocks.max.sm,pstate,pcie.link.gen.current,pcie.link.gen.max,pcie.link.width.current,pcie.link.width.max,vbios_version,persistence_mode,display_active,display_attached,compute_mode,uuid,serial,clocks_throttle_reasons.gpu_idle,clocks_throttle_reasons.sw_power_cap,clocks_throttle_reasons.hw_slowdown,clocks_throttle_reasons.hw_thermal_slowdown,clocks_throttle_reasons.hw_power_brake_slowdown,clocks_throttle_reasons.sw_thermal_slowdown,clocks_throttle_reasons.sync_boost \
           --format=csv,noheader,nounits 2>/dev/null | head -n1)
-        if [ -n "$line" ]; then
-          IFS=',' read -r nn nu nmu nmt nt nf np ng <<<"$line"
-          nn=$(trim "$nn"); [ -n "$nn" ] && name=$nn
-          nu=$(trim "$nu"); is_uint "$nu" && usage=$nu
-          nmu=$(trim "$nmu"); is_uint "$nmu" && vu=$((nmu * 1048576))
-          nmt=$(trim "$nmt"); is_uint "$nmt" && vt=$((nmt * 1048576))
-          nt=$(trim "$nt"); is_uint "$nt" && temp=$((nt * 1000))
-          nf=$(trim "$nf"); is_uint "$nf" && fanpct=$nf
-          np=$(trim "$np"); [[ $np =~ ^[0-9]+(\.[0-9]+)?$ ]] && powerw=$np
-          ng=$(trim "$ng"); is_uint "$ng" && freq=$ng
+        IFS=',' read -ra f <<<"$line"
+        if (( ${#f[@]} >= 45 )); then
+          nn=$(nstr "${f[0]}"); [ -n "$nn" ] && name=$nn
+          driverVersion=$(nstr "${f[1]}")
+          v=$(nstr "${f[2]}");  is_uint "$v" && usage=$v
+          v=$(nstr "${f[3]}");  is_uint "$v" && usageMem=$v
+          v=$(nstr "${f[4]}");  is_uint "$v" && usageEnc=$v
+          v=$(nstr "${f[5]}");  is_uint "$v" && usageDec=$v
+          v=$(nstr "${f[6]}");  is_uint "$v" && vt=$((v * 1048576))
+          v=$(nstr "${f[7]}");  is_uint "$v" && vu=$((v * 1048576))
+          v=$(nstr "${f[8]}");  is_uint "$v" && vfree=$((v * 1048576))
+          v=$(nstr "${f[9]}");  is_uint "$v" && vres=$((v * 1048576))
+          v=$(nstr "${f[10]}"); is_uint "$v" && temp=$((v * 1000))
+          v=$(nstr "${f[11]}"); is_uint "$v" && tempMem=$((v * 1000))
+          v=$(nstr "${f[12]}"); is_uint "$v" && tempLimit=$((v * 1000))
+          v=$(nstr "${f[13]}"); is_uint "$v" && fanpct=$v
+          v=$(nstr "${f[14]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && powerw=$v
+          v=$(nstr "${f[15]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && plimit=$v
+          v=$(nstr "${f[16]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && pdefault=$v
+          v=$(nstr "${f[17]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && pmin=$v
+          v=$(nstr "${f[18]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && pmax=$v
+          v=$(nstr "${f[19]}"); is_uint "$v" && freq=$v
+          v=$(nstr "${f[20]}"); is_uint "$v" && freqMem=$v
+          v=$(nstr "${f[21]}"); is_uint "$v" && freqSm=$v
+          v=$(nstr "${f[22]}"); is_uint "$v" && freqVideo=$v
+          v=$(nstr "${f[23]}"); is_uint "$v" && freqMax=$v
+          v=$(nstr "${f[24]}"); is_uint "$v" && freqMaxMem=$v
+          v=$(nstr "${f[25]}"); is_uint "$v" && freqMaxSm=$v
+          v=$(nstr "${f[26]}"); [ -n "$v" ] && pstate=$v
+          v=$(nstr "${f[27]}"); is_uint "$v" && pcieGen=$v
+          v=$(nstr "${f[28]}"); is_uint "$v" && pcieGenMax=$v
+          v=$(nstr "${f[29]}"); is_uint "$v" && pcieWidth=$v
+          v=$(nstr "${f[30]}"); is_uint "$v" && pcieWidthMax=$v
+          v=$(nstr "${f[31]}"); [ -n "$v" ] && vbios=$v
+          v=$(nstr "${f[32]}"); [ -n "$v" ] && persistence=$v
+          v=$(nstr "${f[33]}"); [ -n "$v" ] && displayActive=$v
+          v=$(nstr "${f[34]}"); [ -n "$v" ] && displayAttached=$v
+          v=$(nstr "${f[35]}"); [ -n "$v" ] && computeMode=$v
+          v=$(nstr "${f[36]}"); [ -n "$v" ] && uuid=$v
+          v=$(nstr "${f[37]}"); [ -n "$v" ] && serial=$v
+          [ "$(nstr "${f[38]}")" = Active ] && throttles+="${throttles:+, }GPU idle"
+          [ "$(nstr "${f[39]}")" = Active ] && throttles+="${throttles:+, }SW power cap"
+          [ "$(nstr "${f[40]}")" = Active ] && throttles+="${throttles:+, }HW slowdown"
+          [ "$(nstr "${f[41]}")" = Active ] && throttles+="${throttles:+, }thermal slowdown"
+          [ "$(nstr "${f[42]}")" = Active ] && throttles+="${throttles:+, }power brake"
+          [ "$(nstr "${f[43]}")" = Active ] && throttles+="${throttles:+, }SW thermal slowdown"
+          [ "$(nstr "${f[44]}")" = Active ] && throttles+="${throttles:+, }sync boost"
+        else
+          line=$(timeout 3 nvidia-smi -i "$slot" \
+            --query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu,fan.speed,power.draw,clocks.gr \
+            --format=csv,noheader,nounits 2>/dev/null | head -n1)
+          IFS=',' read -ra f <<<"$line"
+          if (( ${#f[@]} >= 8 )); then
+            nn=$(nstr "${f[0]}"); [ -n "$nn" ] && name=$nn
+            v=$(nstr "${f[1]}"); is_uint "$v" && usage=$v
+            v=$(nstr "${f[2]}"); is_uint "$v" && vu=$((v * 1048576))
+            v=$(nstr "${f[3]}"); is_uint "$v" && vt=$((v * 1048576))
+            v=$(nstr "${f[4]}"); is_uint "$v" && temp=$((v * 1000))
+            v=$(nstr "${f[5]}"); is_uint "$v" && fanpct=$v
+            v=$(nstr "${f[6]}"); [[ $v =~ ^[0-9]+(\.[0-9]+)?$ ]] && powerw=$v
+            v=$(nstr "${f[7]}"); is_uint "$v" && freq=$v
+          fi
         fi
+
+        # Compute processes (what nvidia-smi's default table lists at the bottom)
+        local pfirst=1 ppid pname pmem
+        while IFS=',' read -r ppid pname pmem; do
+          ppid=$(nstr "$ppid"); pname=$(nstr "$pname"); pmem=$(nstr "$pmem")
+          is_uint "$ppid" || continue
+          ((pfirst)) || procs+=','
+          pfirst=0
+          if is_uint "$pmem"; then pmem=$((pmem * 1048576)); else pmem=null; fi
+          procs+="{\"pid\":$ppid,\"name\":$(jstr "$pname"),\"mem\":$pmem}"
+        done < <(timeout 3 nvidia-smi -i "$slot" \
+          --query-compute-apps=pid,process_name,used_memory \
+          --format=csv,noheader,nounits 2>/dev/null)
       fi
+    fi
+
+    if [ -z "$vfree" ] && is_uint "$vu" && is_uint "$vt" && ((vt >= vu)); then
+      vfree=$((vt - vu))
     fi
 
     ((first)) || out+=','
     first=0
-    out+=$(printf '{"name":%s,"driver":%s,"vendor":%s,"state":%s,"usage":%s,"vramUsed":%s,"vramTotal":%s,"temp":%s,"fanRpm":%s,"fanPct":%s,"freq":%s,"powerW":%s}' \
-      "$(jstr "$name")" "$(jstr "$driver")" "$(jstr "$vendor")" "$(jstr "$state")" \
-      "$(num "$usage")" "$(num "$vu")" "$(num "$vt")" "$(num "$temp")" \
-      "$(num "$fanrpm")" "$(num "$fanpct")" "$(num "$freq")" "$(numf "$powerw")")
+    out+=$(printf '{"name":%s,"driver":%s,"driverVersion":%s,"vendor":%s,"state":%s,"usage":%s,"usageMem":%s,"usageEnc":%s,"usageDec":%s,"vramUsed":%s,"vramTotal":%s,"vramFree":%s,"vramReserved":%s,"temp":%s,"tempMem":%s,"tempLimit":%s,"fanRpm":%s,"fanPct":%s,"freq":%s,"freqMem":%s,"freqSm":%s,"freqVideo":%s,"freqMax":%s,"freqMaxMem":%s,"freqMaxSm":%s,"powerW":%s,"powerLimitW":%s,"powerDefaultW":%s,"powerMinW":%s,"powerMaxW":%s,"pstate":%s,"pcieGen":%s,"pcieGenMax":%s,"pcieWidth":%s,"pcieWidthMax":%s,"vbios":%s,"persistence":%s,"displayActive":%s,"displayAttached":%s,"computeMode":%s,"uuid":%s,"serial":%s,"throttle":%s,"procs":[%s]}' \
+      "$(jstr "$name")" "$(jstr "$driver")" "$(jstr "$driverVersion")" "$(jstr "$vendor")" "$(jstr "$state")" \
+      "$(num "$usage")" "$(num "$usageMem")" "$(num "$usageEnc")" "$(num "$usageDec")" \
+      "$(num "$vu")" "$(num "$vt")" "$(num "$vfree")" "$(num "$vres")" \
+      "$(num "$temp")" "$(num "$tempMem")" "$(num "$tempLimit")" "$(num "$fanrpm")" "$(num "$fanpct")" \
+      "$(num "$freq")" "$(num "$freqMem")" "$(num "$freqSm")" "$(num "$freqVideo")" \
+      "$(num "$freqMax")" "$(num "$freqMaxMem")" "$(num "$freqMaxSm")" \
+      "$(numf "$powerw")" "$(numf "$plimit")" "$(numf "$pdefault")" "$(numf "$pmin")" "$(numf "$pmax")" \
+      "$(jstr "$pstate")" "$(num "$pcieGen")" "$(num "$pcieGenMax")" "$(num "$pcieWidth")" "$(num "$pcieWidthMax")" \
+      "$(jstr "$vbios")" "$(jstr "$persistence")" "$(jstr "$displayActive")" "$(jstr "$displayAttached")" \
+      "$(jstr "$computeMode")" "$(jstr "$uuid")" "$(jstr "$serial")" "$(jstr "$throttles")" "$procs")
   done
   printf '"gpus":[%s]' "$out"
 }

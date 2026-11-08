@@ -10,6 +10,15 @@ PluginSettings {
 
     property string tab: "general"
 
+    readonly property var columnOptions: [
+        { label: "1", value: "1" },
+        { label: "2", value: "2" },
+        { label: "3", value: "3" },
+        { label: "4", value: "4" },
+        { label: "5", value: "5" },
+        { label: "6", value: "6" }
+    ]
+
     StyledText {
         width: parent.width
         text: "System Monitor"
@@ -52,19 +61,6 @@ PluginSettings {
             { label: "5 seconds", value: "5000" }
         ]
         defaultValue: "2000"
-    }
-
-    SelectionSetting {
-        visible: root.tab === "general"
-        settingKey: "coreColumns"
-        label: "Per-core grid columns"
-        options: [
-            { label: "1", value: "1" },
-            { label: "2", value: "2" },
-            { label: "3", value: "3" },
-            { label: "4", value: "4" }
-        ]
-        defaultValue: "2"
     }
 
     ToggleSetting {
@@ -167,6 +163,15 @@ PluginSettings {
         defaultValue: true
     }
 
+    SelectionSetting {
+        visible: root.tab === "freq"
+        settingKey: "freqColumns"
+        label: "Per-core grid columns"
+        description: "How many core frequencies share a row"
+        options: root.columnOptions
+        defaultValue: "2"
+    }
+
     ToggleSetting {
         visible: root.tab === "temp"
         settingKey: "tempBar"
@@ -207,6 +212,23 @@ PluginSettings {
     }
 
     ToggleSetting {
+        visible: root.tab === "temp"
+        settingKey: "tempCores"
+        label: "Show per-core temperatures"
+        description: "One sensor per physical core; hidden automatically if the CPU reports only a package sensor"
+        defaultValue: true
+    }
+
+    SelectionSetting {
+        visible: root.tab === "temp"
+        settingKey: "tempColumns"
+        label: "Per-core grid columns"
+        description: "How many core readings share a row"
+        options: root.columnOptions
+        defaultValue: "3"
+    }
+
+    ToggleSetting {
         visible: root.tab === "usage"
         settingKey: "usageBar"
         label: "Show in bar"
@@ -232,6 +254,15 @@ PluginSettings {
         settingKey: "usageShowUnit"
         label: "Show unit in bar"
         defaultValue: true
+    }
+
+    SelectionSetting {
+        visible: root.tab === "usage"
+        settingKey: "usageColumns"
+        label: "Per-core grid columns"
+        description: "How many core usage readings share a row"
+        options: root.columnOptions
+        defaultValue: "2"
     }
 
     ToggleSetting {
@@ -269,6 +300,8 @@ PluginSettings {
         options: [
             { label: "Percent used", value: "percent" },
             { label: "Used", value: "used" },
+            { label: "Available", value: "available" },
+            { label: "Free", value: "free" },
             { label: "Used / total", value: "used_total" }
         ]
         defaultValue: "percent"
@@ -321,7 +354,9 @@ PluginSettings {
         options: [
             { label: "Usage", value: "usage" },
             { label: "Temperature", value: "temp" },
-            { label: "VRAM used", value: "vram" }
+            { label: "VRAM used", value: "vram" },
+            { label: "Power draw", value: "power" },
+            { label: "Graphics clock", value: "clock" }
         ]
         defaultValue: "usage"
     }
@@ -337,6 +372,71 @@ PluginSettings {
             { label: "Fourth", value: "3" }
         ]
         defaultValue: "0"
+    }
+
+    StyledText {
+        visible: root.tab === "gpu"
+        width: parent.width
+        text: "Popout sections"
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Bold
+        color: Theme.surfaceVariantText
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowUtil"
+        label: "Utilization"
+        description: "GPU, memory controller, encoder and decoder load"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowMem"
+        label: "Memory"
+        description: "VRAM used, free and reserved"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowThermals"
+        label: "Thermals"
+        description: "GPU and memory temperature, fan and clock limiters"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowPower"
+        label: "Power"
+        description: "Power draw and configured limits"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowClocks"
+        label: "Clocks"
+        description: "Graphics, memory, SM and video clocks, current and maximum"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowBus"
+        label: "Bus & driver"
+        description: "PCIe link, VBIOS, persistence/display/compute mode, UUID and serial"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuShowProcs"
+        label: "Processes"
+        description: "Compute processes currently using the GPU"
+        defaultValue: true
     }
 
     ToggleSetting {

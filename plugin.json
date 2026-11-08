@@ -2,7 +2,7 @@
   "id": "cpuFreq",
   "name": "System Monitor",
   "description": "CPU frequency (with governor, EPP, turbo and limits control), temperature, usage, RAM, GPU, fans and disk, in the bar and a tabbed popout.",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "author": "YOUR_GITHUB_USERNAME",
   "icon": "memory",
   "type": "widget",
