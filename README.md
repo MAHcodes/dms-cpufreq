@@ -26,6 +26,8 @@ Eight metrics, each with its own **popout tab** and its own **settings tab**:
 Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
 
+See [STATS.md](STATS.md) for a guide to every reading: what it means, where it comes from and its quirks.
+
 Per-core temperatures and frequencies use a configurable grid (1-6 columns). Note that CPU
 temperature sensors are per **physical** core: a 6-core / 12-thread CPU such as the i7-8750H reports
 6 readings (`coretemp`), not 12. The Temp tab says so and shows the core/thread counts.
