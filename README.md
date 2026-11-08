@@ -10,7 +10,7 @@ CPU frequency control and system monitoring for DankMaterialShell (DMS), modelle
 
 ## What you get
 
-Seven metrics, each with its own **popout tab** and its own **settings tab**:
+Eight metrics, each with its own **popout tab** and its own **settings tab**:
 
 | Metric | Popout tab | Per-metric settings |
 |---|---|---|
@@ -21,6 +21,7 @@ Seven metrics, each with its own **popout tab** and its own **settings tab**:
 | GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar value (usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
 | Fans | every fan reported by hwmon | bar value (fastest or average) |
 | Disk | every mounted filesystem | bar value (percent, used, free, used/total), unit, mount point |
+| Battery | see [Battery and TLP](#battery-and-tlp) | bar value (charge, time remaining, power, energy), keep limits across reboots, toggle each popout page (health, charging, tuning) |
 
 Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
@@ -34,6 +35,35 @@ fallback to the basic field set on older drivers). A runtime-suspended GPU is st
 `nvidia-smi --query-compute-apps` adds the per-GPU compute process list.
 
 Bar entries are separated by two spaces.
+
+## Battery and TLP
+
+The **Battery** tab appears when the machine has a battery and has three pages (each can be hidden in the settings):
+
+* **Overview**: charge, status, time remaining (to empty, or to your charge limit while charging) and power draw in the
+  hero card; power source; the **TLP profile** (Power saver / Balanced / Performance on TLP 1.9+, Auto / AC / Battery on
+  older versions); per-battery health (capacity vs design, cycles, power, voltage, temperature, chemistry, model).
+* **Charging**: per battery, presets (Full 96-100, Balanced 75-80, Lifespan 50-60) plus *start* and *stop* sliders
+  (the start slider only shows if the hardware has a start threshold; stop is limited to 20-100 to avoid a limit that never charges);
+  *Charge to full*, *Charge once* and *Restore limits*; kernel **charge behaviour** (auto / pause / force discharge, where the kernel
+  offers it); ThinkPad **discharge** and **recalibrate** behind a tap-twice confirmation.
+* **Tuning**: edit TLP parameters for the profile you pick (Performance = `_AC`, Balanced = `_BAT`, Power saver = `_SAV`, or just
+  AC / battery on TLP < 1.9): governor, energy preference, platform profile, turbo, HWP dynamic boost, min/max performance, AMD ABM,
+  Radeon DPM, PCIe ASPM, runtime PM, Wi-Fi, audio, SATA link power, AHCI, USB autosuspend, NMI watchdog, Wake-on-LAN and, on TLP 1.10+,
+  which profile TLP uses on AC and on battery. Values shown are the ones TLP reports as effective.
+
+How it talks to TLP:
+
+* Read: sysfs (`/sys/class/power_supply`) every poll; `tlp-stat -c/-b/-m`, `tlp --version` and `tlpctl get` every 30 s and when the popout opens.
+* TLP profile switch (1.9+): `tlpctl set <profile>` without root when `tlp-pd` runs, otherwise `tlp <profile>` through the helper.
+* Charge limits: `tlp setcharge START STOP BAT`. This is **temporary** in TLP, so with *Keep charge limits across reboots* (default on) the
+  helper also writes `START/STOP_CHARGE_THRESH_BATx` to `/etc/tlp.d/99-dms-cpufreq.conf`. Without TLP the thresholds are written to sysfs directly (temporary).
+* Tuning: the helper validates every key against a whitelist (and every value against its type, range or what the kernel reports),
+  writes `/etc/tlp.d/99-dms-cpufreq.conf` atomically and runs `tlp start`, which also leaves TLP's manual mode. *Reset to TLP default*
+  removes a key from that file; *Reset all plugin settings* deletes the file.
+* TLP reads `/etc/tlp.conf` **last**, so a parameter that is uncommented there wins over the drop-in. The Tuning page shows an
+  "Overridden by /etc/tlp.conf" warning on such parameters.
+* TLP says to configure a setting for all its profiles, or values from one can spill into another: if you change one of `_AC`/`_BAT`/`_SAV`, check the others.
 
 ## Install
 
@@ -59,7 +89,9 @@ bash ~/.config/DankMaterialShell/plugins/<plugin folder>/install.sh
 ```
 
 Until the helper is installed the popout shows "Waiting for data" and the bar shows an ellipsis.
-Optional: `nvidia-smi` for NVIDIA GPU stats.
+Optional: `nvidia-smi` for NVIDIA GPU stats, TLP for the TLP parts of the Battery tab.
+
+**Upgrading from an older version:** run `install.sh` again, the helper has new commands and the polkit text changed.
 
 ## How it works
 
@@ -79,10 +111,10 @@ CpuFreq.qml --poll every N s--> dms-cpufreqctl status [sections]   (unprivileged
 
 ## Passwords
 
-By default the polkit policy lets your **active local session** change CPU settings without a
-prompt (`allow_active = yes`); inactive or remote sessions still require admin authentication.
-This is not a privilege escalation (the helper only writes cpufreq sysfs, with validated values),
-but any program running as you in your session can change your governor, turbo and limits without
+By default the polkit policy lets your **active local session** change CPU settings, charge limits and the whitelisted TLP
+parameters without a prompt (`allow_active = yes`); inactive or remote sessions still require admin authentication.
+This is not a privilege escalation (the helper only writes cpufreq/battery sysfs and one TLP drop-in, with validated values),
+but any program running as you in your session can change your governor, turbo, charge limit and TLP settings without
 asking. Use `bash install.sh --auth` for prompts instead; re-run the installer to switch.
 
 ## Design
@@ -109,6 +141,13 @@ plugins.
   name does not exist in your font it shows as a blank gap; tell me which one.
 
 ## Known limitations
+
+* Battery: not run against real TLP or a real DMS session. The helper was tested against a fake sysfs tree and fake `tlp`/`tlp-stat`/`tlpctl`
+  (status parsing, validation, injection attempts, drop-in writing, sysfs fallback) and the QML in headless Qt against stubs (every page, the
+  commands each control issues, error toasts, zero warnings). The `tlp-stat -c` output format differs between TLP versions; the parser
+  accepts both the `file Lnnnn: KEY="value"` and the plain `KEY=value` forms and falls back to `/run/tlp/run.conf`.
+* Some icons (`battery_*_bar`, `battery_saver`, `published_with_changes`, `monitor_heart`, ...) are unverified in your Material Symbols build; a blank gap means the name is missing.
+* `tlp discharge/recalibrate` only exist on ThinkPads; charge-limit support depends on vendor and kernel. Several batteries are combined in the bar.
 
 * Per-core temperatures need `coretemp` ("Core N" labels). AMD (`k10temp`) exposes a package value only.
 * Intel GPUs report clock only (utilisation needs root); NVIDIA needs `nvidia-smi`.

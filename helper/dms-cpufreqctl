@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # dms-cpufreqctl - read system state (any user) / change CPU frequency settings (root, via pkexec)
 #
-#   dms-cpufreqctl status [cpu mem gpu fans disk]     JSON; only the sections you name (default: all)
+#   dms-cpufreqctl status [cpu mem gpu fans disk bat tlp]   JSON; only the sections you name (default: all but tlp)
 #   pkexec /usr/local/bin/dms-cpufreqctl apply governor=X epp=Y turbo=0|1 min=<kHz|hw> max=<kHz|hw>
+#
+# Battery / TLP (all root, all validated, all via the same polkit action):
+#   dms-cpufreqctl charge start=N stop=N [bat=BAT0] [persist=0|1]   set charge thresholds
+#   dms-cpufreqctl charge restore [bat=BAT0]                        back to the configured thresholds
+#   dms-cpufreqctl charge-action fullcharge|chargeonce|discharge|recalibrate [bat=BAT0]
+#   dms-cpufreqctl behaviour auto|inhibit-charge|force-discharge [bat=BAT0]
+#   dms-cpufreqctl tlp-mode auto|ac|bat|performance|balanced|power-saver
+#   dms-cpufreqctl tlp-conf KEY=VALUE...    write whitelisted TLP parameters to /etc/tlp.d/99-dms-cpufreq.conf
+#   dms-cpufreqctl tlp-reset [KEY...]       drop those parameters (or all of them) from that file
 #
 # Every value passed to `apply` is validated against what the kernel reports,
 # because that command runs as root. `status` never needs privileges.
@@ -14,6 +23,10 @@ CPUFREQ=$CPU/cpufreq
 DRM=/sys/class/drm
 HWMON=/sys/class/hwmon
 MOUNTS=/proc/mounts
+PS=/sys/class/power_supply
+TLPD=/etc/tlp.d
+DROPIN=$TLPD/99-dms-cpufreq.conf
+PLATFORM=/sys/firmware/acpi/platform_profile_choices
 
 rd() { [ -r "$1" ] && tr -d '\n' <"$1" 2>/dev/null; return 0; }
 is_uint() { [[ ${1:-} =~ ^[0-9]+$ ]]; }
@@ -380,8 +393,283 @@ emit_gpus() {
   printf '"gpus":[%s]' "$out"
 }
 
+# ----------------------------------------------------------- battery / TLP --
+
+# TLP parameters this helper is willing to write. Anything else is rejected.
+#   TLP_PROFILED: base name -> "validator|profiles that exist for it" (key = BASE_ON_<profile>)
+#   TLP_GLOBAL:   full key  -> validator
+# Validators: bool (0|1), yn (Y|N), int:LO:HI, enum:a b c, gov, epp, platform
+declare -A TLP_PROFILED=(
+  [CPU_SCALING_GOVERNOR]="gov|AC BAT SAV"
+  [CPU_ENERGY_PERF_POLICY]="epp|AC BAT SAV"
+  [CPU_MIN_PERF]="int:0:100|AC BAT SAV"
+  [CPU_MAX_PERF]="int:0:100|AC BAT SAV"
+  [CPU_BOOST]="bool|AC BAT SAV"
+  [CPU_HWP_DYN_BOOST]="bool|AC BAT SAV"
+  [PLATFORM_PROFILE]="platform|AC BAT SAV"
+  [AMDGPU_ABM_LEVEL]="int:0:4|AC BAT SAV"
+  [RADEON_DPM_PERF_LEVEL]="enum:auto low high|AC BAT SAV"
+  [PCIE_ASPM]="enum:default performance powersave powersupersave|AC BAT SAV"
+  [RUNTIME_PM]="enum:on auto|AC BAT"
+  [WIFI_PWR]="enum:on off|AC BAT"
+  [SOUND_POWER_SAVE]="int:0:60|AC BAT"
+  [SATA_LINKPWR]="enum:max_performance medium_power med_power_with_dipm min_power|AC BAT"
+  [AHCI_RUNTIME_PM]="enum:on auto|AC BAT"
+)
+declare -A TLP_GLOBAL=(
+  [USB_AUTOSUSPEND]=bool
+  [NMI_WATCHDOG]=bool
+  [WOL_DISABLE]=yn
+  [TLP_PROFILE_AC]="enum:performance balanced power-saver"
+  [TLP_PROFILE_BAT]="enum:performance balanced power-saver"
+  [START_CHARGE_THRESH_BAT0]="int:0:99"
+  [STOP_CHARGE_THRESH_BAT0]="int:1:100"
+  [START_CHARGE_THRESH_BAT1]="int:0:99"
+  [STOP_CHARGE_THRESH_BAT1]="int:1:100"
+  [RESTORE_THRESHOLDS_ON_BAT]=bool
+)
+
+TLP_V=""
+tlp_lookup() { # KEY -> sets TLP_V, returns 0 when the key is whitelisted
+  local k=$1 spec prof
+  TLP_V=""
+  if [[ -n ${TLP_GLOBAL[$k]+x} ]]; then TLP_V=${TLP_GLOBAL[$k]}; return 0; fi
+  if [[ $k =~ ^(.+)_ON_(AC|BAT|SAV)$ ]]; then
+    prof=${BASH_REMATCH[2]}
+    if [[ -n ${TLP_PROFILED[${BASH_REMATCH[1]}]+x} ]]; then
+      spec=${TLP_PROFILED[${BASH_REMATCH[1]}]}
+      [[ " ${spec##*|} " == *" $prof "* ]] || return 1
+      TLP_V=${spec%%|*}
+      return 0
+    fi
+  fi
+  return 1
+}
+
+tlp_check() { # validator value
+  local v=$1 val=$2 lo hi choices
+  case $v in
+    bool) [[ $val =~ ^[01]$ ]] ;;
+    yn) [[ $val =~ ^[YN]$ ]] ;;
+    int:*)
+      IFS=: read -r _ lo hi <<<"$v"
+      [[ $val =~ ^[0-9]{1,3}$ ]] && ((10#$val >= lo && 10#$val <= hi))
+      ;;
+    enum:*) [[ " ${v#enum:} " == *" $val "* ]] ;;
+    gov)
+      [[ $val =~ ^[A-Za-z0-9_-]+$ ]] &&
+        [[ " $(rd "$CPU/cpu0/cpufreq/scaling_available_governors") " == *" $val "* ]]
+      ;;
+    epp)
+      [[ $val =~ ^[A-Za-z0-9_-]+$ ]] &&
+        [[ " $(rd "$CPU/cpu0/cpufreq/energy_performance_available_preferences") " == *" $val "* ]]
+      ;;
+    platform)
+      [[ $val =~ ^[a-z][a-z-]*$ ]] || return 1
+      choices=$(rd "$PLATFORM")
+      [ -z "$choices" ] || [[ " $choices " == *" $val "* ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+find_tlp() {
+  local p
+  for p in /usr/bin/tlp /usr/sbin/tlp /usr/local/bin/tlp /usr/local/sbin/tlp; do
+    [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+  done
+  command -v tlp 2>/dev/null
+}
+find_tool() { # tlp-stat, tlpctl
+  local p
+  for p in "/usr/bin/$1" "/usr/sbin/$1" "/usr/local/bin/$1"; do
+    [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+  done
+  command -v "$1" 2>/dev/null
+}
+
+# Product of two uints divided by 1e6 (charge[uAh] * voltage[uV] -> energy[uWh]); empty on bad input.
+mul6() {
+  is_uint "${1:-}" && is_uint "${2:-}" && printf '%s' "$((10#$1 * 10#$2 / 1000000))"
+  return 0
+}
+
+emit_bat() {
+  local out="" first=1 d name type scope status cap en ef efd cn cf cfd pw cur vn vref
+  local cyc temp tech mfr model serial st et hasst hasen behav behavs ac=null a on f
+
+  for a in "$PS"/*; do
+    [ -d "$a" ] || continue
+    case $(rd "$a/type") in
+      Mains|USB|USB_C|USB_PD|USB_DCP|USB_CDP|USB_ACA|UPS) ;;
+      *) continue ;;
+    esac
+    on=$(rd "$a/online")
+    if [ "$on" = 1 ]; then ac=true; elif [ "$ac" = null ] && [ "$on" = 0 ]; then ac=false; fi
+  done
+
+  for d in "$PS"/*; do
+    [ -d "$d" ] || continue
+    [ "$(rd "$d/type")" = Battery ] || continue
+    scope=$(rd "$d/scope")
+    [ "$scope" = Device ] && continue            # mice, keyboards, headsets...
+    name=${d##*/}
+    status=$(rd "$d/status")
+
+    en=$(rd "$d/energy_now"); ef=$(rd "$d/energy_full"); efd=$(rd "$d/energy_full_design")
+    if ! is_uint "$ef"; then
+      cn=$(rd "$d/charge_now"); cf=$(rd "$d/charge_full"); cfd=$(rd "$d/charge_full_design")
+      vref=$(rd "$d/voltage_min_design"); is_uint "$vref" || vref=$(rd "$d/voltage_now")
+      en=$(mul6 "$cn" "$vref"); ef=$(mul6 "$cf" "$vref"); efd=$(mul6 "$cfd" "$vref")
+    fi
+    pw=$(rd "$d/power_now")
+    if ! is_uint "$pw"; then
+      cur=$(rd "$d/current_now"); vn=$(rd "$d/voltage_now")
+      pw=$(mul6 "${cur#-}" "$vn")
+    fi
+    vn=$(rd "$d/voltage_now")
+    cap=$(rd "$d/capacity")
+    if ! is_uint "$cap" && is_uint "$en" && is_uint "$ef" && ((10#$ef > 0)); then
+      cap=$((10#$en * 100 / 10#$ef))
+    fi
+    cyc=$(rd "$d/cycle_count")
+    temp=$(rd "$d/temp")
+    tech=$(rd "$d/technology"); mfr=$(rd "$d/manufacturer"); model=$(rd "$d/model_name")
+    serial=$(rd "$d/serial_number")
+
+    hasst=false; hasen=false; st=""; et=""
+    for f in charge_control_start_threshold charge_start_threshold; do
+      [ -e "$d/$f" ] && { hasst=true; st=$(rd "$d/$f"); break; }
+    done
+    for f in charge_control_end_threshold charge_stop_threshold; do
+      [ -e "$d/$f" ] && { hasen=true; et=$(rd "$d/$f"); break; }
+    done
+
+    # "[auto] inhibit-charge force-discharge": the bracketed word is the active one
+    behav=""; behavs=""
+    if [ -r "$d/charge_behaviour" ]; then
+      local raw w
+      raw=$(rd "$d/charge_behaviour")
+      set -f                                        # nullglob would swallow "[auto]"
+      for w in $raw; do
+        case $w in \[*\]) w=${w#\[}; w=${w%\]}; behav=$w ;; esac
+        behavs+="${behavs:+ }$w"
+      done
+      set +f
+    fi
+
+    ((first)) || out+=','
+    first=0
+    out+=$(printf '{"name":%s,"status":%s,"capacity":%s,"energyNow":%s,"energyFull":%s,"energyDesign":%s,"powerNow":%s,"voltage":%s,"cycles":%s,"temp":%s,"tech":%s,"manufacturer":%s,"model":%s,"serial":%s,"hasStart":%s,"hasStop":%s,"start":%s,"stop":%s,"behaviour":%s,"behaviours":%s}' \
+      "$(jstr "$name")" "$(jstr "$status")" "$(num "$cap")" "$(num "$en")" "$(num "$ef")" "$(num "$efd")" \
+      "$(num "$pw")" "$(num "$vn")" "$(num "$cyc")" "$(num "$temp")" \
+      "$(jstr "$tech")" "$(jstr "$mfr")" "$(jstr "$model")" "$(jstr "$serial")" \
+      "$hasst" "$hasen" "$(num "$st")" "$(num "$et")" "$(jstr "$behav")" "$(jlist "$behavs")")
+  done
+  printf '"bats":[%s],"ac":%s' "$out" "$ac"
+}
+
+emit_tlp() {
+  local tlp tlpstat tlpctl ver="" major=0 minor=0 installed=false hasctl=false pd=false
+  local profile="" mode="" manual=false out line k v f
+  local sMin="" sMax="" eMin="" eMax="" plugin="" feats="" nums
+  local -a n
+  tlp=$(find_tlp); tlpstat=$(find_tool tlp-stat); tlpctl=$(find_tool tlpctl)
+
+  if [ -n "$tlp" ]; then
+    installed=true
+    ver=$(timeout 3 "$tlp" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)
+    if [ -z "$ver" ] && [ -n "$tlpstat" ]; then
+      ver=$(timeout 3 "$tlpstat" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)
+    fi
+    IFS=. read -r major minor _ <<<"$ver"
+    is_uint "$major" || major=0
+    is_uint "$minor" || minor=0
+  fi
+
+  if [ -n "$tlpctl" ]; then
+    hasctl=true
+    line=$(timeout 2 "$tlpctl" get 2>/dev/null | head -n1)
+    case $line in performance|balanced|power-saver) profile=$line; pd=true ;; esac
+  fi
+  if [ -z "$profile" ] && [ -n "$tlpstat" ]; then
+    line=$(timeout 3 "$tlpstat" -m 2>/dev/null | head -n1)
+    case $line in
+      performance*|balanced*|power-saver*) profile=${line%%[!a-z-]*} ;;
+      *)
+        shopt -s nocasematch
+        [[ $line == *manual* ]] && manual=true
+        if [[ $line == *AC* ]]; then mode=ac; elif [[ $line == *bat* ]]; then mode=bat; fi
+        shopt -u nocasematch
+        ;;
+    esac
+  fi
+
+  # charge threshold ranges and features, from `tlp-stat -b` (best effort, may need root on some versions)
+  if [ -n "$tlpstat" ]; then
+    local bout
+    bout=$(timeout 4 "$tlpstat" -b 2>/dev/null)
+    plugin=$(grep -m1 -E '^Plugin:' <<<"$bout" | cut -d: -f2- | sed 's/^ *//')
+    feats=$(grep -m1 -E '^Supported features:' <<<"$bout" | cut -d: -f2- | sed 's/^ *//')
+    line=$(grep -m1 -E 'START_CHARGE_THRESH_BAT' <<<"$bout" | cut -d: -f2-)
+    nums=$(grep -oE '[0-9]+' <<<"$line" | tr '\n' ' ')
+    read -ra n <<<"$nums"
+    if ((${#n[@]} >= 2)); then sMin=${n[0]}; sMax=${n[${#n[@]} - 1]}; fi
+    line=$(grep -m1 -E 'STOP_CHARGE_THRESH_BAT' <<<"$bout" | cut -d: -f2-)
+    nums=$(grep -oE '[0-9]+' <<<"$line" | tr '\n' ' ')
+    read -ra n <<<"$nums"
+    if ((${#n[@]} >= 2)); then eMin=${n[0]}; eMax=${n[${#n[@]} - 1]}; fi
+  fi
+
+  # effective configuration (and which file each value comes from)
+  local -A cv=() cf=()
+  local re1='^(.+)[[:space:]]L[0-9]+:[[:space:]]*([A-Z][A-Z0-9_]*)=\"?([^\"]*)\"?[[:space:]]*$'
+  local re2='^([A-Z][A-Z0-9_]*)=\"?([^\"]*)\"?[[:space:]]*$'
+  if [ -n "$tlpstat" ]; then
+    while IFS= read -r line; do
+      if [[ $line =~ $re1 ]]; then cv[${BASH_REMATCH[2]}]=${BASH_REMATCH[3]}; cf[${BASH_REMATCH[2]}]=${BASH_REMATCH[1]}
+      elif [[ $line =~ $re2 ]]; then cv[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; cf[${BASH_REMATCH[1]}]=""; fi
+    done < <(timeout 4 "$tlpstat" -c 2>/dev/null)
+  fi
+  if ((${#cv[@]} == 0)) && [ -r /run/tlp/run.conf ]; then
+    while IFS= read -r line; do
+      if [[ $line =~ $re2 ]]; then cv[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; cf[${BASH_REMATCH[1]}]=""; fi
+    done </run/tlp/run.conf
+  fi
+
+  local conf="" firstc=1
+  for k in "${!cv[@]}"; do
+    tlp_lookup "$k" || continue
+    ((firstc)) || conf+=','
+    firstc=0
+    conf+="$(jstr "$k"):{\"v\":$(jstr "${cv[$k]}"),\"f\":$(jstr "${cf[$k]:-}")}"
+  done
+
+  # keys currently managed by this plugin's drop-in
+  local managed="" firstm=1
+  if [ -r "$DROPIN" ]; then
+    while IFS= read -r line; do
+      [[ $line =~ $re2 ]] || continue
+      ((firstm)) || managed+=','
+      firstm=0
+      managed+=$(jstr "${BASH_REMATCH[1]}")
+    done <"$DROPIN"
+  fi
+
+  printf '"tlp":{"installed":%s,"version":%s,"major":%s,"minor":%s,"profiles":%s,"hasCtl":%s,"pd":%s,' \
+    "$installed" "$(jstr "$ver")" "$major" "$minor" \
+    "$([ "$major" -gt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -ge 9 ]; } && echo true || echo false)" \
+    "$hasctl" "$pd"
+  printf '"profile":%s,"mode":%s,"manual":%s,"plugin":%s,"features":%s,' \
+    "$(jstr "$profile")" "$(jstr "$mode")" "$manual" "$(jstr "$plugin")" "$(jstr "$feats")"
+  printf '"startMin":%s,"startMax":%s,"stopMin":%s,"stopMax":%s,' \
+    "$(num "$sMin")" "$(num "$sMax")" "$(num "$eMin")" "$(num "$eMax")"
+  printf '"platformChoices":%s,"dropin":%s,"managed":[%s],"conf":{%s}}' \
+    "$(jlist "$(rd "$PLATFORM")")" "$(jstr "$DROPIN")" "$managed" "$conf"
+}
+
 cmd_status() {
-  local sections=${*:-cpu mem gpu fans disk} s
+  local sections=${*:-cpu mem gpu fans disk bat} s
   local chunks=()
   for s in $sections; do
     case $s in
@@ -390,6 +678,8 @@ cmd_status() {
       gpu) chunks+=("$(emit_gpus)") ;;
       fans) chunks+=("$(emit_fans)") ;;
       disk) chunks+=("$(emit_disks)") ;;
+      bat) chunks+=("$(emit_bat)") ;;
+      tlp) chunks+=("$(emit_tlp)") ;;
     esac
   done
   local IFS=,
@@ -503,8 +793,255 @@ cmd_apply() {
   ((fails == 0)) || exit 1
 }
 
+# ------------------------------------------------- battery / TLP (root) -----
+
+need_root() { [ "$(id -u)" -eq 0 ] || die "$1 must run as root (use pkexec)"; }
+
+valid_bat() { # name of an existing, real battery
+  [[ ${1:-} =~ ^[A-Za-z0-9_]+$ ]] && [ "$(rd "$PS/$1/type")" = Battery ] && [ "$(rd "$PS/$1/scope")" != Device ]
+}
+
+default_bat() { # first battery that has any charge threshold, else the first battery
+  local d fb=""
+  for d in "$PS"/*; do
+    [ "$(rd "$d/type")" = Battery ] || continue
+    [ "$(rd "$d/scope")" = Device ] && continue
+    [ -n "$fb" ] || fb=${d##*/}
+    if [ -e "$d/charge_control_end_threshold" ] || [ -e "$d/charge_stop_threshold" ]; then
+      printf '%s' "${d##*/}"; return 0
+    fi
+  done
+  printf '%s' "$fb"
+}
+
+# BAT0 -> BAT0, BAT1 -> BAT1; TLP documents BATC/BATT/CMB0 as aliases of BAT0
+tlp_bat_key() { case $1 in BAT1) printf 'BAT1' ;; *) printf 'BAT0' ;; esac; }
+
+thresh_file() { # battery kind(start|stop) -> existing sysfs path
+  local f
+  case $2 in
+    start) for f in charge_control_start_threshold charge_start_threshold; do [ -e "$PS/$1/$f" ] && { printf '%s' "$PS/$1/$f"; return 0; }; done ;;
+    stop)  for f in charge_control_end_threshold charge_stop_threshold; do [ -e "$PS/$1/$f" ] && { printf '%s' "$PS/$1/$f"; return 0; }; done ;;
+  esac
+  return 1
+}
+
+# Direct sysfs fallback when TLP is not installed. Ordered so start < stop holds at every step.
+set_thresholds_sysfs() { # bat start stop
+  local bat=$1 start=$2 stop=$3 sf ef cur
+  ef=$(thresh_file "$bat" stop) || die "$bat has no charge threshold support"
+  sf=$(thresh_file "$bat" start) || sf=""
+  cur=$(rd "$ef"); is_uint "$cur" || cur=100
+  if ((stop >= cur)); then
+    wr "$ef" "$stop"
+    [ -n "$sf" ] && wr "$sf" "$start"
+  else
+    [ -n "$sf" ] && wr "$sf" "$start"
+    wr "$ef" "$stop"
+  fi
+  return 0
+}
+
+drop_in_read() { # fills the global assoc array DI from the managed drop-in
+  local line re='^([A-Z][A-Z0-9_]*)=\"?([^\"]*)\"?[[:space:]]*$'
+  DI=()
+  [ -r "$DROPIN" ] || return 0
+  while IFS= read -r line; do
+    [[ $line =~ $re ]] && DI[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+  done <"$DROPIN"
+  return 0
+}
+
+drop_in_write() { # writes the global DI atomically; removes the file when empty
+  local k tmp
+  if ((${#DI[@]} == 0)); then rm -f "$DROPIN"; return 0; fi
+  mkdir -p "$TLPD" || die "cannot create $TLPD"
+  tmp=$(mktemp "$TLPD/.dms-cpufreq.XXXXXX") || die "cannot write to $TLPD"
+  {
+    echo "# Managed by the dms-cpufreq plugin (System Monitor > Battery). Edits made here may be overwritten."
+    echo "# Note: /etc/tlp.conf is read last and overrides everything in this directory."
+    for k in $(printf '%s\n' "${!DI[@]}" | sort); do printf '%s="%s"\n' "$k" "${DI[$k]}"; done
+  } >"$tmp"
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$DROPIN" || { rm -f "$tmp"; die "cannot install $DROPIN"; }
+}
+
+run_tlp() { # run a tlp subcommand, forwarding its error text
+  local bin out rc
+  bin=$(find_tlp) || true
+  [ -n "$bin" ] || die "TLP is not installed"
+  out=$("$bin" "$@" 2>&1); rc=$?
+  if ((rc != 0)); then
+    echo "$(printf '%s' "$out" | grep -v '^$' | tail -n1)" >&2
+    [ -n "$out" ] || echo "tlp $1 failed (exit $rc)" >&2
+    exit 1
+  fi
+}
+
+tlp_version_ge() { # major minor
+  local bin v ma mi
+  bin=$(find_tlp) || true
+  [ -n "$bin" ] || return 1
+  v=$("$bin" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | head -n1)
+  IFS=. read -r ma mi <<<"$v"
+  is_uint "$ma" && is_uint "$mi" || return 1
+  (( 10#$ma > $1 || (10#$ma == $1 && 10#$mi >= $2) ))
+}
+
+cmd_charge() {
+  need_root charge
+  local start="" stop="" bat="" persist=0 restore=0 kv
+  for kv in "$@"; do
+    case $kv in
+      start=*) start=${kv#*=} ;;
+      stop=*) stop=${kv#*=} ;;
+      bat=*) bat=${kv#*=} ;;
+      persist=*) persist=${kv#*=} ;;
+      restore) restore=1 ;;
+      *) die "unknown argument: $kv" ;;
+    esac
+  done
+  [ -n "$bat" ] || bat=$(default_bat)
+  valid_bat "$bat" || die "no such battery: $bat"
+  [[ $persist =~ ^[01]$ ]] || die "invalid persist value"
+
+  if ((restore)); then
+    run_tlp setcharge "$bat"
+    return 0
+  fi
+
+  is_uint "$stop" || die "invalid stop threshold"
+  stop=$((10#$stop))
+  ((stop >= 1 && stop <= 100)) || die "stop threshold must be 1-100"
+  if thresh_file "$bat" start >/dev/null; then
+    is_uint "$start" || die "invalid start threshold"
+    start=$((10#$start))
+    ((start >= 0 && start <= 99)) || die "start threshold must be 0-99"
+    ((start == 0 || start < stop)) || die "start threshold must be below the stop threshold"
+  else
+    start=0                          # hardware only has a stop threshold; TLP wants 0 for start
+  fi
+
+  if [ -n "$(find_tlp)" ]; then
+    if ((persist)); then
+      local kb; kb=$(tlp_bat_key "$bat")
+      declare -A DI=()
+      drop_in_read
+      DI[STOP_CHARGE_THRESH_$kb]=$stop
+      thresh_file "$bat" start >/dev/null && DI[START_CHARGE_THRESH_$kb]=$start
+      drop_in_write
+    fi
+    run_tlp setcharge "$start" "$stop" "$bat"
+  else
+    set_thresholds_sysfs "$bat" "$start" "$stop"
+    ((fails == 0)) || exit 1
+  fi
+}
+
+cmd_charge_action() {
+  need_root charge-action
+  local action=${1:-} bat="" kv
+  shift || true
+  for kv in "$@"; do
+    case $kv in bat=*) bat=${kv#*=} ;; *) die "unknown argument: $kv" ;; esac
+  done
+  [ -n "$bat" ] || bat=$(default_bat)
+  valid_bat "$bat" || die "no such battery: $bat"
+  case $action in
+    fullcharge|chargeonce|discharge|recalibrate) ;;
+    *) die "unknown action: $action" ;;
+  esac
+  if [ -z "$(find_tlp)" ]; then
+    # Only a full charge can be done without TLP: lift the stop threshold.
+    [ "$action" = fullcharge ] || die "$action needs TLP"
+    set_thresholds_sysfs "$bat" 0 100
+    ((fails == 0)) || exit 1
+    return 0
+  fi
+  run_tlp "$action" "$bat"
+}
+
+cmd_behaviour() {
+  need_root behaviour
+  local want=${1:-} bat="" kv f raw w ok=0
+  shift || true
+  for kv in "$@"; do
+    case $kv in bat=*) bat=${kv#*=} ;; *) die "unknown argument: $kv" ;; esac
+  done
+  [ -n "$bat" ] || bat=$(default_bat)
+  valid_bat "$bat" || die "no such battery: $bat"
+  [[ $want =~ ^[a-z-]+$ ]] || die "invalid charge behaviour"
+  f=$PS/$bat/charge_behaviour
+  [ -w "$f" ] || die "charge behaviour is not supported on $bat"
+  raw=$(rd "$f")
+  set -f
+  for w in $raw; do w=${w#\[}; w=${w%\]}; [ "$w" = "$want" ] && ok=1; done
+  set +f
+  ((ok)) || die "charge behaviour not available: $want"
+  wr "$f" "$want"
+  ((fails == 0)) || exit 1
+}
+
+cmd_tlp_mode() {
+  need_root tlp-mode
+  local m=${1:-}
+  case $m in
+    auto) run_tlp start ;;
+    ac|bat) run_tlp "$m" ;;
+    performance|balanced|power-saver)
+      tlp_version_ge 1 9 || die "TLP profiles need TLP 1.9 or newer"
+      run_tlp "$m"
+      ;;
+    *) die "unknown TLP mode: $m" ;;
+  esac
+}
+
+cmd_tlp_conf() {
+  need_root tlp-conf
+  [ -n "$(find_tlp)" ] || die "TLP is not installed"
+  local kv k v
+  declare -A DI=() NEW=()
+  for kv in "$@"; do
+    [[ $kv == *=* ]] || die "invalid argument: $kv"
+    k=${kv%%=*}; v=${kv#*=}
+    [[ $k =~ ^[A-Z][A-Z0-9_]*$ ]] || die "invalid parameter name"
+    tlp_lookup "$k" || die "parameter not allowed: $k"
+    tlp_check "$TLP_V" "$v" || die "invalid value for $k"
+    NEW[$k]=$v
+  done
+  ((${#NEW[@]} > 0)) || die "nothing to set"
+  drop_in_read
+  for k in "${!NEW[@]}"; do DI[$k]=${NEW[$k]}; done
+  drop_in_write
+  run_tlp start
+}
+
+cmd_tlp_reset() {
+  need_root tlp-reset
+  [ -n "$(find_tlp)" ] || die "TLP is not installed"
+  local k
+  declare -A DI=()
+  if (($# == 0)); then
+    rm -f "$DROPIN"
+  else
+    drop_in_read
+    for k in "$@"; do
+      [[ $k =~ ^[A-Z][A-Z0-9_]*$ ]] || die "invalid parameter name"
+      unset "DI[$k]"
+    done
+    drop_in_write
+  fi
+  run_tlp start
+}
+
 case ${1:-} in
   status) shift; cmd_status "$@" ;;
   apply) shift; cmd_apply "$@" ;;
-  *) echo "usage: dms-cpufreqctl status [cpu mem gpu fans disk] | apply key=value..." >&2; exit 2 ;;
+  charge) shift; cmd_charge "$@" ;;
+  charge-action) shift; cmd_charge_action "$@" ;;
+  behaviour) shift; cmd_behaviour "$@" ;;
+  tlp-mode) shift; cmd_tlp_mode "$@" ;;
+  tlp-conf) shift; cmd_tlp_conf "$@" ;;
+  tlp-reset) shift; cmd_tlp_reset "$@" ;;
+  *) echo "usage: dms-cpufreqctl status [cpu mem gpu fans disk bat tlp] | apply|charge|charge-action|behaviour|tlp-mode|tlp-conf|tlp-reset ..." >&2; exit 2 ;;
 esac

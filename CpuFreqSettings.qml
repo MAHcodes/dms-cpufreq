@@ -46,7 +46,8 @@ PluginSettings {
             { key: "mem", label: "RAM", icon: "developer_board" },
             { key: "gpu", label: "GPU", icon: "auto_awesome_mosaic" },
             { key: "fans", label: "Fans", icon: "mode_fan" },
-            { key: "disk", label: "Disk", icon: "storage" }
+            { key: "disk", label: "Disk", icon: "storage" },
+            { key: "bat", label: "Battery", icon: "battery_full" }
         ]
         onSelected: key => root.tab = key
     }
@@ -538,5 +539,98 @@ PluginSettings {
         description: "Falls back to the first filesystem if this one is not mounted"
         placeholder: "/"
         defaultValue: "/"
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batBar"
+        label: "Show in bar"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batTab"
+        label: "Show tab in popout"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batIcon"
+        label: "Show icon in bar"
+        description: "The icon follows the charge level and shows a bolt while charging"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batShowUnit"
+        label: "Show unit in bar"
+        defaultValue: true
+    }
+
+    SelectionSetting {
+        visible: root.tab === "bat"
+        settingKey: "batDisplay"
+        label: "Value shown in bar"
+        description: "Several batteries are combined into one reading"
+        options: [
+            { label: "Charge", value: "percent" },
+            { label: "Time remaining", value: "time" },
+            { label: "Power draw", value: "power" },
+            { label: "Energy", value: "energy" }
+        ]
+        defaultValue: "percent"
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batPersist"
+        label: "Keep charge limits across reboots"
+        description: "Writes limits to /etc/tlp.d/99-dms-cpufreq.conf. When off, TLP only applies them until the next boot. Needs TLP; without it limits are always temporary"
+        defaultValue: true
+    }
+
+    StyledText {
+        visible: root.tab === "bat"
+        width: parent.width
+        text: "Popout pages"
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Bold
+        color: Theme.surfaceVariantText
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batShowHealth"
+        label: "Battery health"
+        description: "Overview page: capacity, health, cycles, power, voltage, temperature and model"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batShowCharging"
+        label: "Charging"
+        description: "Charge limit presets and sliders, charge now, charge behaviour and maintenance"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batShowTuning"
+        label: "Tuning"
+        description: "Edit TLP parameters per profile: governor, energy preference, turbo, Wi-Fi, PCIe, USB and more"
+        defaultValue: true
+    }
+
+    StyledText {
+        visible: root.tab === "bat"
+        width: parent.width
+        text: "Charge limits need hardware and kernel support (ThinkPad, ASUS, Dell, Framework and others). Tuning needs TLP. /etc/tlp.conf overrides the drop-in this plugin writes; the popout warns when it does."
+        font.pixelSize: Theme.fontSizeSmall
+        color: Theme.surfaceVariantText
+        wrapMode: Text.WordWrap
     }
 }

@@ -54,7 +54,11 @@ esac
 cat <<MSG
 
 Done ($mode mode). polkit picks up the policy immediately.
-  1. DMS Settings -> Plugins -> Scan for Plugins -> enable "CPU Frequency"
+  1. DMS Settings -> Plugins -> Scan for Plugins -> enable "System Monitor"
   2. Add it to a DankBar section
   3. dms restart   (or: dms ipc call plugins reload cpuFreq)
+
+Battery tab: charge limits work on supported laptops with or without TLP.
+TLP profiles and tuning need TLP (https://linrunner.de/tlp); re-run this
+installer after updating the plugin so the helper is replaced too.
 MSG

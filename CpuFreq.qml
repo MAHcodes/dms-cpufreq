@@ -151,7 +151,7 @@ PluginComponent {
     readonly property string ctl: "/usr/local/bin/dms-cpufreqctl"
 
     // ===================================================== metric registry ==
-    readonly property var metricKeys: ["freq", "temp", "usage", "mem", "gpu", "fans", "disk"]
+    readonly property var metricKeys: ["freq", "temp", "usage", "mem", "gpu", "fans", "disk", "bat"]
     readonly property var metricIcons: ({
         freq: "speed",
         temp: "thermostat",
@@ -159,11 +159,31 @@ PluginComponent {
         mem: "developer_board",
         gpu: "auto_awesome_mosaic",
         fans: "mode_fan",
-        disk: "storage"
+        disk: "storage",
+        bat: "battery_full"
     })
     readonly property var metricLabels: ({
-        freq: "Freq", temp: "Temp", usage: "Usage", mem: "RAM", gpu: "GPU", fans: "Fans", disk: "Disk"
+        freq: "Freq", temp: "Temp", usage: "Usage", mem: "RAM", gpu: "GPU", fans: "Fans", disk: "Disk",
+        bat: "Battery"
     })
+    readonly property var platformIcons: ({
+        performance: "rocket_launch", "balanced-performance": "speed", balanced: "balance",
+        "low-power": "eco", quiet: "volume_off", cool: "ac_unit"
+    })
+    readonly property var platformShort: ({
+        "balanced-performance": "Bal. perf", "low-power": "Low power"
+    })
+    readonly property var behaviourLabels: ({
+        auto: "Auto", "inhibit-charge": "Pause", "force-discharge": "Discharge"
+    })
+    readonly property var behaviourIcons: ({
+        auto: "autorenew", "inhibit-charge": "pause_circle", "force-discharge": "trending_down"
+    })
+    readonly property var chargePresets: [
+        { label: "Full", value: "full", icon: "battery_full", start: 96, stop: 100 },
+        { label: "Balanced", value: "balanced", icon: "balance", start: 75, stop: 80 },
+        { label: "Lifespan", value: "lifespan", icon: "eco", start: 50, stop: 60 }
+    ]
     readonly property var governorIcons: ({
         performance: "rocket_launch", powersave: "eco", schedutil: "balance",
         ondemand: "trending_up", conservative: "trending_down", userspace: "person"
@@ -213,7 +233,7 @@ PluginComponent {
     property real usageAll: 0
     property var usageById: ({})
     property var pendingApply: []
-    property var currentArgs: []
+    property var current: ({ cmd: "apply", args: [], ok: "" })
 
     // lists that feed Repeaters/segmented controls are only reassigned when
     // their content changes, so delegates are not rebuilt on every poll
@@ -228,6 +248,14 @@ PluginComponent {
     readonly property var gpus: snap && snap.gpus ? snap.gpus : []
     readonly property var fans: snap && snap.fans ? snap.fans : []
     readonly property var disks: snap && snap.disks ? snap.disks : []
+    readonly property var bats: snap && snap.bats ? snap.bats : []
+    readonly property bool onAc: snap != null && snap.ac === true
+
+    // TLP state is polled separately (and slower) than the cheap sysfs status
+    property var tlpInfo: null
+    property var behaviourOptions: []
+    property var platformOptions: []
+    readonly property bool tlpInstalled: tlpInfo != null && tlpInfo.installed === true
 
     function assignStable(prop, val) {
         const s = JSON.stringify(val)
@@ -246,6 +274,7 @@ PluginComponent {
         case "gpu": return gpus.length > 0
         case "fans": return fans.length > 0
         case "disk": return disks.length > 0
+        case "bat": return bats.length > 0
         }
         return false
     }
@@ -263,11 +292,12 @@ PluginComponent {
     function sections() {
         const need = k => opt(k + "Bar", k === "freq") || opt(k + "Tab", true)
         const s = []
-        if (need("freq") || need("temp") || need("usage")) s.push("cpu")
+        if (need("freq") || need("temp") || need("usage") || need("bat")) s.push("cpu")
         if (need("mem")) s.push("mem")
         if (need("gpu")) s.push("gpu")
         if (need("fans")) s.push("fans")
         if (need("disk")) s.push("disk")
+        if (need("bat")) s.push("bat")
         return s.length ? s : ["cpu"]
     }
 
@@ -315,6 +345,147 @@ PluginComponent {
     }
 
     function clamp100(v) { return Math.max(0, Math.min(100, v)) }
+
+    // ============================================================ battery ==
+    // sysfs reports energy in uWh, power in uW, voltage in uV, temperature in 0.1 C
+    function metricIcon(key) { return key === "bat" ? batIcon() : metricIcons[key] }
+
+    function batTotals() {
+        const t = { en: 0, ef: 0, ed: 0, pw: 0, target: 0, cap: 0, n: 0, haveEnergy: bats.length > 0 }
+        for (const b of bats) {
+            t.n++
+            t.cap += b.capacity != null ? b.capacity : 0
+            if (b.energyNow != null && b.energyFull != null) {
+                t.en += b.energyNow
+                t.ef += b.energyFull
+                const lim = (b.hasStop && b.stop != null && b.stop > 0 && b.stop < 100) ? b.stop : 100
+                t.target += b.energyFull * lim / 100
+            } else {
+                t.haveEnergy = false
+            }
+            if (b.energyDesign != null) t.ed += b.energyDesign
+            if (b.powerNow != null) t.pw += b.powerNow
+        }
+        return t
+    }
+
+    function batPct() {
+        const t = batTotals()
+        if (t.haveEnergy && t.ef > 0) return clamp100(100 * t.en / t.ef)
+        return t.n > 0 ? clamp100(t.cap / t.n) : 0
+    }
+
+    function batStatus() {
+        let first = ""
+        for (const b of bats) {
+            if (b.status === "Charging") return "Charging"
+            if (first === "") first = b.status
+        }
+        for (const b of bats) if (b.status === "Discharging") return "Discharging"
+        return first !== "" ? first : "Unknown"
+    }
+
+    // hours until empty (discharging) or until the charge limit (charging); -1 when unknown
+    function batEtaH() {
+        const t = batTotals()
+        if (!t.haveEnergy || t.pw <= 0) return -1
+        const s = batStatus()
+        if (s === "Discharging") return t.en / t.pw
+        if (s === "Charging") return Math.max(0, t.target - t.en) / t.pw
+        return -1
+    }
+
+    function fmtDuration(h, short) {
+        if (h < 0 || h > 99) return "–"
+        const m = Math.round(h * 60)
+        const hh = Math.floor(m / 60)
+        const mm = m % 60
+        if (short) return hh + ":" + (mm < 10 ? "0" : "") + mm
+        return hh > 0 ? hh + " h " + mm + " min" : mm + " min"
+    }
+
+    function fmtWh(uwh) { return uwh == null ? "–" : (uwh / 1e6).toFixed(1) + " Wh" }
+    function fmtW(uw) { return uw == null ? "–" : (uw / 1e6).toFixed(1) + " W" }
+    function fmtV(uv) { return uv == null ? "–" : (uv / 1e6).toFixed(2) + " V" }
+
+    function batHealth(b) {
+        return b && b.energyFull != null && b.energyDesign > 0 ? clamp100(100 * b.energyFull / b.energyDesign) : -1
+    }
+
+    function batIcon() {
+        if (!bats.length) return "battery_unknown"
+        const s = batStatus()
+        const p = batPct()
+        if (s === "Charging") return "battery_charging_full"
+        if (s === "Discharging" && p < 10) return "battery_alert"
+        if (p >= 95) return "battery_full"
+        if (p >= 80) return "battery_6_bar"
+        if (p >= 65) return "battery_5_bar"
+        if (p >= 50) return "battery_4_bar"
+        if (p >= 35) return "battery_3_bar"
+        if (p >= 20) return "battery_2_bar"
+        return p >= 8 ? "battery_1_bar" : "battery_0_bar"
+    }
+
+    function batCaption() {
+        if (!bats.length) return ""
+        const s = batStatus()
+        const eta = batEtaH()
+        const t = batTotals()
+        const parts = [s]
+        if (eta >= 0) {
+            if (s === "Discharging") parts.push(fmtDuration(eta, false) + " left")
+            else parts.push(fmtDuration(eta, false) + " to " + chargeTargetText())
+        } else if (s === "Not charging" || s === "Full") {
+            const lim = chargeLimitText()
+            if (lim !== "") parts.push(lim)
+        }
+        if (t.pw > 0) parts.push(fmtW(t.pw))
+        return parts.join(" · ")
+    }
+
+    function chargeLimitText() {
+        for (const b of bats) if (b.hasStop && b.stop != null && b.stop < 100) return "limit " + b.stop + "%"
+        return ""
+    }
+    function chargeTargetText() {
+        for (const b of bats) if (b.hasStop && b.stop != null && b.stop < 100) return b.stop + "%"
+        return "full"
+    }
+
+    function batName(i) {
+        return bats.length > 1 && bats[i] ? " · " + bats[i].name : ""
+    }
+
+    function chargePreset(b) {
+        if (!b || b.stop == null) return ""
+        for (const p of chargePresets) {
+            if (b.stop === p.stop && (!b.hasStart || b.start === p.start)) return p.value
+        }
+        return ""
+    }
+
+    function chargeCaption(b) {
+        if (!tlpInstalled)
+            return "TLP was not found: limits are written to the kernel directly and last until the next reboot."
+        return opt("batPersist", true)
+            ? "Saved to the TLP config, so the limit survives reboots."
+            : "Temporary: TLP restores the configured limit at the next boot."
+    }
+
+    function tlpRange(which, def) {
+        const v = tlpInfo ? tlpInfo[which] : null
+        return (v === null || v === undefined) ? def : v
+    }
+
+    function tlpHasFeature(f) {
+        return tlpInstalled && ((tlpInfo.features || "").indexOf(f) >= 0)
+    }
+
+    function tlpAtLeast(maj, min) {
+        const t = tlpInfo
+        return !!t && t.installed === true && (t.major > maj || (t.major === maj && t.minor >= min))
+    }
 
     // ============================================================ metrics ==
     function freqList() {
@@ -450,6 +621,15 @@ PluginComponent {
             if (disp === "free") return fmtBytes(d.avail, sc, u)
             return fmtBytesPair(d.used, d.used + d.avail, sc, u)
         }
+        if (key === "bat") {
+            if (!bats.length) return "–"
+            const d = opt("batDisplay", "percent")
+            const t = batTotals()
+            if (d === "time") return fmtDuration(batEtaH(), true)
+            if (d === "power") return t.pw > 0 ? (t.pw / 1e6).toFixed(1) + (u ? " W" : "") : "–"
+            if (d === "energy") return t.haveEnergy ? (t.en / 1e6).toFixed(1) + (u ? " Wh" : "") : "–"
+            return Math.round(batPct()) + (u ? "%" : "")
+        }
         return ""
     }
 
@@ -497,9 +677,32 @@ PluginComponent {
             assignStable("eppOptions", buildOptions(j.cpu.epps, eppIcons, eppShort))
         }
 
+        if (j.bats) {
+            let opts = []
+            for (const b of j.bats) {
+                if (b.behaviours && b.behaviours.length > 1) {
+                    opts = buildOptions(b.behaviours, behaviourIcons, behaviourLabels)
+                    break
+                }
+            }
+            assignStable("behaviourOptions", opts)
+        }
+
         snap = j
         err = ""
         refreshTabs()
+    }
+
+    function handleTlp(text) {
+        let j
+        try {
+            j = JSON.parse(text)
+        } catch (e) {
+            return
+        }
+        if (!j.tlp) return
+        assignStable("platformOptions", buildOptions(j.tlp.platformChoices || [], platformIcons, platformShort))
+        assignStable("tlpInfo", j.tlp)
     }
 
     Process {
@@ -514,6 +717,28 @@ PluginComponent {
                 root.err = "dms-cpufreqctl status failed (exit " + code + "). Run install.sh from this plugin's folder (see README)."
             }
         }
+    }
+
+    Process {
+        id: tlpProc
+        command: [root.ctl, "status", "tlp"]
+        stdout: StdioCollector {
+            onStreamFinished: root.handleTlp(this.text)
+        }
+    }
+
+    function refreshTlp() {
+        if (!tlpProc.running) tlpProc.running = true
+    }
+
+    // TLP configuration changes rarely; the popout also refreshes it when it opens
+    // and after every change made from here.
+    Timer {
+        interval: 30000
+        running: root.bats.length > 0 && (root.opt("batBar", false) || root.opt("batTab", true))
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.refreshTlp()
     }
 
     Timer {
@@ -531,29 +756,48 @@ PluginComponent {
         onExited: (code, status) => root.applyDone(code, applyErr.text)
     }
 
-    function apply(args) {
-        pendingApply.push(args)
+    // Everything privileged goes through one queue: { cmd, args, ok } becomes
+    // `pkexec dms-cpufreqctl <cmd> <args...>`. `ok` is an optional success toast.
+    function run(cmd, args, ok) {
+        pendingApply.push({ cmd: cmd, args: args, ok: ok || "" })
         if (!applyProc.running) nextApply()
     }
 
+    function apply(args) { run("apply", args, "") }
+
     function nextApply() {
         if (!pendingApply.length) return
-        currentArgs = pendingApply.shift()
-        applyProc.command = ["pkexec", ctl, "apply"].concat(currentArgs)
+        current = pendingApply.shift()
+        applyProc.command = ["pkexec", ctl, current.cmd].concat(current.args)
         applyProc.running = true
     }
 
     function applyDone(code, errText) {
         if (code === 0) {
-            remember(currentArgs)
+            if (current.cmd === "apply") remember(current.args)
+            if (current.ok) ToastService?.showInfo("System Monitor: " + current.ok)
         } else if (code === 126 || code === 127) {
             ToastService?.showInfo("System Monitor: authentication cancelled or failed")
         } else {
-            const first = (errText || "").split("\n")[0]
+            const first = (errText || "").split("\n")[0].replace(/^dms-cpufreqctl:\s*/, "")
             ToastService?.showInfo("System Monitor: " + (first || "change failed"))
         }
+        if (current.cmd !== "apply") refreshTlp()
         if (!statusProc.running) statusProc.running = true
         nextApply()
+    }
+
+    // Switching the TLP profile (TLP 1.9+) does not need root when tlp-pd is running:
+    // tlpctl talks to the daemon, which authorizes the active session itself.
+    Process {
+        id: profileProc
+        property string wanted: ""
+        stderr: StdioCollector { id: profileErr }
+        onExited: (code, status) => {
+            if (code !== 0) root.run("tlp-mode", [profileProc.wanted], "TLP profile: " + profileProc.wanted)
+            else ToastService?.showInfo("System Monitor: TLP profile " + profileProc.wanted)
+            root.refreshTlp()
+        }
     }
 
     // ================================================ persistence/restore ==
@@ -604,6 +848,132 @@ PluginComponent {
         if (cpu && v < cpu.scalingMin) apply(["min=" + v, "max=" + v])
         else apply(["max=" + v])
     }
+
+    // ================================================ battery / TLP actions ==
+    function setTlpProfile(name) {
+        if (tlpInfo && tlpInfo.profiles && tlpInfo.pd && tlpInfo.hasCtl) {
+            profileProc.wanted = name
+            profileProc.command = ["tlpctl", "set", name]
+            profileProc.running = true
+        } else {
+            run("tlp-mode", [name], "TLP profile: " + name)
+        }
+    }
+
+    function setTlpMode(mode) { run("tlp-mode", [mode], "TLP mode: " + mode) }
+
+    function setCharge(bat, start, stop) {
+        run("charge", ["start=" + start, "stop=" + stop, "bat=" + bat,
+                       "persist=" + (opt("batPersist", true) ? 1 : 0)],
+            "charge limit " + (start > 0 ? start + "-" : "") + stop + "%")
+    }
+
+    // keep start below stop: moving one bound drags the other along
+    function setChargeStart(b, v) {
+        let start = Math.round(v)
+        let stop = b.stop != null ? b.stop : 100
+        if (start >= stop) {
+            stop = Math.min(100, start + 5)
+            if (stop - start < 5) start = stop - 5
+        }
+        setCharge(b.name, start, stop)
+    }
+    function setChargeStop(b, v) {
+        const stop = Math.round(v)
+        let start = b.hasStart && b.start != null ? b.start : 0
+        if (b.hasStart && start >= stop) start = Math.max(0, stop - 5)
+        setCharge(b.name, start, stop)
+    }
+    function applyChargePreset(b, value) {
+        for (const p of chargePresets) if (p.value === value) { setCharge(b.name, p.start, p.stop); return }
+    }
+
+    function chargeAction(action, bat) {
+        const msg = ({ fullcharge: "charging to full", chargeonce: "charging to the limit once",
+                       discharge: "discharging", recalibrate: "recalibration started" })[action]
+        run("charge-action", [action, "bat=" + bat], msg)
+    }
+    function restoreCharge(bat) { run("charge", ["restore", "bat=" + bat], "configured charge limits restored") }
+    function setBehaviour(bat, v) { run("behaviour", [v, "bat=" + bat], "charge behaviour: " + v) }
+
+    // TLP tuning: every item is { base | key, label, icon, type, ... }; `base` items exist per profile (_ON_AC/_BAT/_SAV)
+    readonly property var tlpGroups: [
+        { title: "Processor", icon: "memory", items: [
+            { base: "CPU_SCALING_GOVERNOR", label: "CPU governor", icon: "settings_suggest", type: "seg", from: "governors", sav: true },
+            { base: "CPU_ENERGY_PERF_POLICY", label: "Energy preference", icon: "battery_charging_full", type: "seg", from: "epps", sav: true },
+            { base: "PLATFORM_PROFILE", label: "Platform profile", icon: "tune", type: "seg", from: "platform", sav: true },
+            { base: "CPU_BOOST", label: "Turbo boost", icon: "bolt", type: "switch", sav: true },
+            { base: "CPU_HWP_DYN_BOOST", label: "HWP dynamic boost", icon: "electric_bolt", type: "switch", sav: true },
+            { base: "CPU_MIN_PERF", label: "Minimum performance", icon: "vertical_align_bottom", type: "slider", min: 0, max: 100, unit: "%", sav: true },
+            { base: "CPU_MAX_PERF", label: "Maximum performance", icon: "vertical_align_top", type: "slider", min: 0, max: 100, unit: "%", sav: true }
+        ] },
+        { title: "Graphics", icon: "auto_awesome_mosaic", items: [
+            { base: "AMDGPU_ABM_LEVEL", label: "AMD display power saving", icon: "brightness_medium", type: "seg", sav: true,
+              options: [ { label: "Off", value: "0" }, { label: "1", value: "1" }, { label: "2", value: "2" },
+                         { label: "3", value: "3" }, { label: "4", value: "4" } ] },
+            { base: "RADEON_DPM_PERF_LEVEL", label: "Radeon DPM level", icon: "speed", type: "seg", sav: true,
+              options: [ { label: "Auto", value: "auto" }, { label: "Low", value: "low" }, { label: "High", value: "high" } ] }
+        ] },
+        { title: "Devices", icon: "devices", items: [
+            { base: "PCIE_ASPM", label: "PCIe power saving (ASPM)", icon: "settings_ethernet", type: "seg", sav: true,
+              options: [ { label: "Default", value: "default" }, { label: "Perf", value: "performance" },
+                         { label: "Save", value: "powersave" }, { label: "Max save", value: "powersupersave" } ] },
+            { base: "RUNTIME_PM", label: "Runtime power management", icon: "power_settings_new", type: "switch", onValue: "auto", offValue: "on" },
+            { base: "WIFI_PWR", label: "Wi-Fi power saving", icon: "wifi", type: "switch", onValue: "on", offValue: "off" },
+            { base: "SOUND_POWER_SAVE", label: "Audio power saving", icon: "volume_down", type: "switch", onValue: "1", offValue: "0" },
+            { base: "SATA_LINKPWR", label: "SATA link power", icon: "storage", type: "seg",
+              options: [ { label: "Max perf", value: "max_performance" }, { label: "Medium", value: "medium_power" },
+                         { label: "Med + DIPM", value: "med_power_with_dipm" }, { label: "Min power", value: "min_power" } ] },
+            { base: "AHCI_RUNTIME_PM", label: "AHCI runtime PM", icon: "hard_drive", type: "switch", onValue: "auto", offValue: "on" }
+        ] },
+        { title: "System", icon: "settings", global: true, items: [
+            { key: "TLP_PROFILE_AC", label: "Profile on AC power", icon: "power", type: "seg", minVersion: [1, 10],
+              options: [ { label: "Power saver", value: "power-saver", icon: "eco" }, { label: "Balanced", value: "balanced", icon: "balance" },
+                         { label: "Performance", value: "performance", icon: "rocket_launch" } ] },
+            { key: "TLP_PROFILE_BAT", label: "Profile on battery", icon: "battery_full", type: "seg", minVersion: [1, 10],
+              options: [ { label: "Power saver", value: "power-saver", icon: "eco" }, { label: "Balanced", value: "balanced", icon: "balance" },
+                         { label: "Performance", value: "performance", icon: "rocket_launch" } ] },
+            { key: "USB_AUTOSUSPEND", label: "USB autosuspend", icon: "usb", type: "switch", onValue: "1", offValue: "0" },
+            { key: "NMI_WATCHDOG", label: "NMI watchdog", icon: "monitor_heart", type: "switch", onValue: "1", offValue: "0" },
+            { key: "WOL_DISABLE", label: "Disable Wake-on-LAN", icon: "lan", type: "switch", onValue: "Y", offValue: "N" }
+        ] }
+    ]
+
+    readonly property var tuneProfiles: tlpInfo && tlpInfo.profiles
+        ? [ { label: "Performance", value: "AC", icon: "rocket_launch" },
+            { label: "Balanced", value: "BAT", icon: "balance" },
+            { label: "Power saver", value: "SAV", icon: "eco" } ]
+        : [ { label: "On AC", value: "AC", icon: "power" },
+            { label: "On battery", value: "BAT", icon: "battery_full" } ]
+
+    function tlpKey(item, profile) { return item.base ? item.base + "_ON_" + profile : item.key }
+
+    function tlpItems(group, profile) {
+        const out = []
+        for (const it of group.items) {
+            if (it.minVersion && !tlpAtLeast(it.minVersion[0], it.minVersion[1])) continue
+            if (it.base && !group.global && profile === "SAV" && !it.sav) continue
+            out.push(it)
+        }
+        return out
+    }
+
+    function tlpOptions(item) {
+        if (item.from === "governors") return governorOptions
+        if (item.from === "epps") return eppOptions
+        if (item.from === "platform") return platformOptions
+        return item.options || []
+    }
+
+    function tlpConfEntry(key) {
+        return tlpInfo && tlpInfo.conf && tlpInfo.conf[key] ? tlpInfo.conf[key] : null
+    }
+    function tlpValue(key) { const e = tlpConfEntry(key); return e ? e.v : "" }
+    function tlpSource(key) { const e = tlpConfEntry(key); return e ? e.f : "" }
+    function tlpManaged(key) { return !!(tlpInfo && tlpInfo.managed && tlpInfo.managed.indexOf(key) >= 0) }
+
+    function tlpSet(key, value, label) { run("tlp-conf", [key + "=" + value], label + " saved to TLP config") }
+    function tlpReset(keys) { run("tlp-reset", keys, keys.length ? "setting reset to TLP default" : "all plugin TLP settings reset") }
 
     function pick(list, candidates) {
         for (const c of candidates) if (list.indexOf(c) >= 0) return c
@@ -707,7 +1077,7 @@ PluginComponent {
 
                         DankIcon {
                             visible: root.barIconShown(modelData)
-                            name: root.metricIcons[modelData]
+                            name: root.metricIcon(modelData)
                             size: root.barIconSize
                             color: Theme.primary
                             anchors.verticalCenter: parent.verticalCenter
@@ -746,7 +1116,7 @@ PluginComponent {
 
                     DankIcon {
                         visible: root.barIconShown(modelData)
-                        name: root.metricIcons[modelData]
+                        name: root.metricIcon(modelData)
                         size: root.barIconSize
                         color: Theme.primary
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -762,6 +1132,14 @@ PluginComponent {
         }
     }
 
+    // sub-pages of the Battery tab, each can be hidden in the plugin settings
+    readonly property var batPageOptions: {
+        const o = [{ label: "Overview", value: "overview", icon: "battery_full" }]
+        if (opt("batShowCharging", true)) o.push({ label: "Charging", value: "charging", icon: "bolt" })
+        if (opt("batShowTuning", true)) o.push({ label: "Tuning", value: "tuning", icon: "tune" })
+        return o
+    }
+
     // ========================================================== popout =====
     popoutWidth: 480
     popoutHeight: 660
@@ -775,6 +1153,23 @@ PluginComponent {
                 for (const t of root.tabs) if (t.key === tab) return tab
                 return root.tabs.length ? root.tabs[0].key : ""
             }
+
+            // Battery tab: sub-page, which TLP profile the Tuning page edits, and a
+            // two-step confirmation for destructive actions ("kind:name", auto-expires)
+            property string batPage: "overview"
+            property string tuneProfile: "BAT"
+            property string confirm: ""
+            readonly property string batPageActive: {
+                for (const o of root.batPageOptions) if (o.value === batPage) return batPage
+                return root.batPageOptions.length ? root.batPageOptions[0].value : "overview"
+            }
+            onConfirmChanged: if (confirm !== "") confirmTimer.restart()
+            Timer {
+                id: confirmTimer
+                interval: 5000
+                onTriggered: pop.confirm = ""
+            }
+            Component.onCompleted: root.refreshTlp()
 
             headerText: "System Monitor"
             detailsText: root.cpu ? root.cpu.model : ""
@@ -1496,6 +1891,443 @@ PluginComponent {
                                         label: d ? d.mount : ""
                                         value: d ? root.fmtBytesPair(d.used, d.used + d.avail, root.opt("diskScale", "auto"), true) : ""
                                         progress: d ? root.diskPct(d) : -1
+                                    }
+                                }
+                            }
+                        }
+
+                        // ==================================== battery ====
+                        Column {
+                            visible: pop.activeTab === "bat" && root.bats.length > 0
+                            width: parent.width
+                            spacing: Theme.spacingL
+
+                            HeroCard {
+                                width: parent.width
+                                icon: root.batIcon()
+                                value: Math.round(root.batPct()) + "%"
+                                caption: root.batCaption()
+                                progress: root.batPct()
+                            }
+
+                            SegmentedControl {
+                                visible: root.batPageOptions.length > 1
+                                width: parent.width
+                                options: root.batPageOptions
+                                current: pop.batPageActive
+                                onSelected: value => pop.batPage = value
+                            }
+
+                            // ------------------------------------ overview ----
+                            Column {
+                                visible: pop.batPageActive === "overview"
+                                width: parent.width
+                                spacing: Theme.spacingL
+
+                                SectionCard {
+                                    width: parent.width
+                                    title: "Power"
+                                    icon: "power"
+
+                                    StatRow {
+                                        width: parent.width
+                                        icon: root.onAc ? "power" : "battery_full"
+                                        label: "Power source"
+                                        value: root.snap && root.snap.ac === null ? "Unknown" : (root.onAc ? "AC adapter" : "Battery")
+                                    }
+
+                                    Column {
+                                        visible: root.tlpInstalled && root.tlpInfo.profiles === true
+                                        width: parent.width
+                                        spacing: Theme.spacingXS
+
+                                        FieldLabel { text: "TLP profile"; icon: "tune" }
+                                        SegmentedControl {
+                                            width: parent.width
+                                            options: [
+                                                { label: "Power saver", value: "power-saver", icon: "eco" },
+                                                { label: "Balanced", value: "balanced", icon: "balance" },
+                                                { label: "Performance", value: "performance", icon: "rocket_launch" }
+                                            ]
+                                            current: root.tlpInfo ? root.tlpInfo.profile : ""
+                                            onSelected: value => root.setTlpProfile(value)
+                                        }
+                                    }
+
+                                    Column {
+                                        visible: root.tlpInstalled && root.tlpInfo.profiles !== true
+                                        width: parent.width
+                                        spacing: Theme.spacingXS
+
+                                        FieldLabel { text: "TLP mode"; icon: "tune" }
+                                        SegmentedControl {
+                                            width: parent.width
+                                            options: [
+                                                { label: "Auto", value: "auto", icon: "autorenew" },
+                                                { label: "AC", value: "ac", icon: "power" },
+                                                { label: "Battery", value: "bat", icon: "battery_full" }
+                                            ]
+                                            current: !root.tlpInfo ? "" : (root.tlpInfo.manual ? root.tlpInfo.mode : "auto")
+                                            onSelected: value => root.setTlpMode(value)
+                                        }
+                                    }
+
+                                    StatRow {
+                                        visible: root.tlpInstalled
+                                        width: parent.width
+                                        icon: "info"
+                                        label: "TLP"
+                                        value: root.tlpInstalled && root.tlpInfo.version !== "" ? "Version " + root.tlpInfo.version : "Installed"
+                                    }
+                                }
+
+                                Callout {
+                                    visible: root.tlpInfo !== null && !root.tlpInstalled
+                                    width: parent.width
+                                    tone: "info"
+                                    text: "TLP is not installed. Charge limits still work through the kernel, but power profiles and settings that survive a reboot need TLP (linrunner.de/tlp)."
+                                }
+
+                                Repeater {
+                                    model: root.opt("batShowHealth", true) ? root.bats.length : 0
+
+                                    delegate: SectionCard {
+                                        id: hc
+                                        readonly property var b: root.bats[index] ? root.bats[index] : null
+                                        width: parent.width
+                                        title: "Battery health" + root.batName(index)
+                                        icon: "health_and_safety"
+
+                                        StatRow {
+                                            visible: hc.b !== null && root.batHealth(hc.b) >= 0
+                                            width: parent.width
+                                            icon: "health_and_safety"
+                                            label: "Health"
+                                            value: Math.round(root.batHealth(hc.b)) + "%"
+                                            progress: root.batHealth(hc.b)
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.energyFull != null
+                                            width: parent.width
+                                            icon: "battery_full"
+                                            label: "Capacity"
+                                            value: hc.b ? root.fmtWh(hc.b.energyFull)
+                                                   + (hc.b.energyDesign != null ? " of " + root.fmtWh(hc.b.energyDesign) : "") : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.energyNow != null
+                                            width: parent.width
+                                            icon: "battery_charging_full"
+                                            label: "Charge"
+                                            value: hc.b ? root.fmtWh(hc.b.energyNow) : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.powerNow != null
+                                            width: parent.width
+                                            icon: "bolt"
+                                            label: hc.b && hc.b.status === "Charging" ? "Charging power" : "Power draw"
+                                            value: hc.b ? root.fmtW(hc.b.powerNow) : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.voltage != null
+                                            width: parent.width
+                                            icon: "electric_bolt"
+                                            label: "Voltage"
+                                            value: hc.b ? root.fmtV(hc.b.voltage) : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.cycles != null
+                                            width: parent.width
+                                            icon: "autorenew"
+                                            label: "Charge cycles"
+                                            value: hc.b ? String(hc.b.cycles) : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.temp != null
+                                            width: parent.width
+                                            icon: "thermostat"
+                                            label: "Temperature"
+                                            value: hc.b && hc.b.temp != null
+                                                   ? root.fmtTemp(hc.b.temp * 100, false) : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && hc.b.tech !== ""
+                                            width: parent.width
+                                            icon: "science"
+                                            label: "Chemistry"
+                                            value: hc.b ? hc.b.tech : ""
+                                        }
+                                        StatRow {
+                                            visible: hc.b !== null && (hc.b.manufacturer !== "" || hc.b.model !== "")
+                                            width: parent.width
+                                            icon: "factory"
+                                            label: "Model"
+                                            value: hc.b
+                                                   ? (hc.b.manufacturer + " " + hc.b.model).trim() : ""
+                                        }
+                                    }
+                                }
+                            }
+
+                            // ------------------------------------ charging ----
+                            Column {
+                                visible: pop.batPageActive === "charging"
+                                width: parent.width
+                                spacing: Theme.spacingL
+
+                                Repeater {
+                                    model: root.bats.length
+
+                                    delegate: Column {
+                                        id: chg
+                                        readonly property var b: root.bats[index] ? root.bats[index] : null
+                                        width: parent.width
+                                        spacing: Theme.spacingL
+
+                                        SectionCard {
+                                            visible: chg.b !== null && chg.b.hasStop === true
+                                            width: parent.width
+                                            title: "Charge limit" + root.batName(index)
+                                            icon: "battery_saver"
+                                            caption: root.chargeCaption(chg.b)
+
+                                            Column {
+                                                width: parent.width
+                                                spacing: Theme.spacingXS
+
+                                                FieldLabel { text: "Preset"; icon: "tune" }
+                                                SegmentedControl {
+                                                    width: parent.width
+                                                    options: root.chargePresets
+                                                    current: root.chargePreset(chg.b)
+                                                    onSelected: value => root.applyChargePreset(chg.b, value)
+                                                }
+                                            }
+
+                                            SliderRow {
+                                                id: startRow
+                                                visible: chg.b !== null && chg.b.hasStart === true
+                                                width: parent.width
+                                                icon: "play_arrow"
+                                                label: "Start charging below"
+                                                valueText: Math.round(startRow.shown) + "%"
+                                                from: root.tlpRange("startMin", 0)
+                                                to: root.tlpRange("startMax", 99)
+                                                step: 1
+                                                value: chg.b && chg.b.start != null ? chg.b.start : 0
+                                                onReleased: newValue => root.setChargeStart(chg.b, newValue)
+                                            }
+
+                                            SliderRow {
+                                                id: stopRow
+                                                width: parent.width
+                                                icon: "stop"
+                                                label: "Stop charging at"
+                                                valueText: Math.round(stopRow.shown) + "%"
+                                                from: Math.max(root.tlpRange("stopMin", 1), 20)
+                                                to: root.tlpRange("stopMax", 100)
+                                                step: 1
+                                                value: chg.b && chg.b.stop != null ? chg.b.stop : 100
+                                                onReleased: newValue => root.setChargeStop(chg.b, newValue)
+                                            }
+                                        }
+
+                                        SectionCard {
+                                            visible: chg.b !== null && chg.b.hasStop === true
+                                            width: parent.width
+                                            title: "Charge now" + root.batName(index)
+                                            icon: "bolt"
+                                            caption: "One-off actions. The configured limit comes back at the next boot or with Restore."
+
+                                            Grid {
+                                                id: nowGrid
+                                                width: parent.width
+                                                columns: 2
+                                                columnSpacing: Theme.spacingS
+                                                rowSpacing: Theme.spacingS
+
+                                                ActionButton {
+                                                    width: (nowGrid.width - nowGrid.columnSpacing) / 2
+                                                    icon: "battery_full"
+                                                    text: "Charge to full"
+                                                    onClicked: root.chargeAction("fullcharge", chg.b.name)
+                                                }
+                                                ActionButton {
+                                                    visible: root.tlpInstalled && chg.b !== null && chg.b.hasStart === true
+                                                    width: (nowGrid.width - nowGrid.columnSpacing) / 2
+                                                    icon: "bolt"
+                                                    text: "Charge once"
+                                                    onClicked: root.chargeAction("chargeonce", chg.b.name)
+                                                }
+                                                ActionButton {
+                                                    visible: root.tlpInstalled
+                                                    width: (nowGrid.width - nowGrid.columnSpacing) / 2
+                                                    variant: "outlined"
+                                                    icon: "restart_alt"
+                                                    text: "Restore limits"
+                                                    onClicked: root.restoreCharge(chg.b.name)
+                                                }
+                                            }
+                                        }
+
+                                        SectionCard {
+                                            visible: chg.b !== null && chg.b.behaviours.length > 1
+                                            width: parent.width
+                                            title: "Charge behaviour" + root.batName(index)
+                                            icon: "swap_vert"
+                                            caption: "Kernel-level control: pause charging while on AC, or force the battery to discharge."
+
+                                            SegmentedControl {
+                                                width: parent.width
+                                                options: root.behaviourOptions
+                                                current: chg.b ? chg.b.behaviour : ""
+                                                onSelected: value => root.setBehaviour(chg.b.name, value)
+                                            }
+                                        }
+
+                                        SectionCard {
+                                            visible: root.tlpHasFeature("recalibration") && chg.b !== null
+                                            width: parent.width
+                                            title: "Maintenance" + root.batName(index)
+                                            icon: "build"
+
+                                            Callout {
+                                                width: parent.width
+                                                tone: "warn"
+                                                text: "Both actions need the charger connected and fully drain the battery. Discharging takes a while; recalibration also recharges to 100%."
+                                            }
+
+                                            Grid {
+                                                id: maintGrid
+                                                width: parent.width
+                                                columns: 2
+                                                columnSpacing: Theme.spacingS
+                                                rowSpacing: Theme.spacingS
+
+                                                ActionButton {
+                                                    readonly property string key: chg.b ? "discharge:" + chg.b.name : ""
+                                                    width: (maintGrid.width - maintGrid.columnSpacing) / 2
+                                                    icon: "battery_alert"
+                                                    variant: pop.confirm === key ? "filled" : "tonal"
+                                                    danger: pop.confirm === key
+                                                    text: pop.confirm === key ? "Tap to confirm" : "Discharge"
+                                                    onClicked: {
+                                                        if (pop.confirm === key) { pop.confirm = ""; root.chargeAction("discharge", chg.b.name) }
+                                                        else pop.confirm = key
+                                                    }
+                                                }
+                                                ActionButton {
+                                                    readonly property string key: chg.b ? "recalibrate:" + chg.b.name : ""
+                                                    width: (maintGrid.width - maintGrid.columnSpacing) / 2
+                                                    icon: "published_with_changes"
+                                                    variant: pop.confirm === key ? "filled" : "tonal"
+                                                    danger: pop.confirm === key
+                                                    text: pop.confirm === key ? "Tap to confirm" : "Recalibrate"
+                                                    onClicked: {
+                                                        if (pop.confirm === key) { pop.confirm = ""; root.chargeAction("recalibrate", chg.b.name) }
+                                                        else pop.confirm = key
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Callout {
+                                    visible: root.bats.length > 0 && !root.bats.some(b => b.hasStop === true)
+                                    width: parent.width
+                                    tone: "info"
+                                    text: "This battery does not expose charge thresholds, so there is nothing to limit. Support depends on the laptop vendor and kernel version."
+                                }
+                            }
+
+                            // ------------------------------------- tuning ----
+                            Column {
+                                visible: pop.batPageActive === "tuning"
+                                width: parent.width
+                                spacing: Theme.spacingL
+
+                                Callout {
+                                    visible: !root.tlpInstalled
+                                    width: parent.width
+                                    tone: "info"
+                                    text: "Tuning edits TLP parameters, so it needs TLP to be installed (linrunner.de/tlp)."
+                                }
+
+                                SectionCard {
+                                    visible: root.tlpInstalled
+                                    width: parent.width
+                                    title: "Profile to edit"
+                                    icon: "tune"
+                                    caption: root.tlpInfo && root.tlpInfo.profiles
+                                        ? "Performance is used on AC power, Balanced on battery and Power saver when you pick it."
+                                        : "TLP applies the AC set on AC power and the battery set on battery power."
+
+                                    SegmentedControl {
+                                        width: parent.width
+                                        options: root.tuneProfiles
+                                        current: pop.tuneProfile
+                                        onSelected: value => pop.tuneProfile = value
+                                    }
+                                }
+
+                                Repeater {
+                                    model: root.tlpInstalled ? root.tlpGroups : []
+
+                                    delegate: SectionCard {
+                                        id: grp
+                                        readonly property var group: modelData
+                                        readonly property var items: root.tlpItems(modelData, pop.tuneProfile)
+                                        visible: items.length > 0
+                                        width: parent.width
+                                        title: modelData.title
+                                        icon: modelData.icon
+
+                                        Repeater {
+                                            model: grp.items
+
+                                            delegate: TlpField {
+                                                readonly property string k: root.tlpKey(modelData, pop.tuneProfile)
+                                                width: parent.width
+                                                icon: modelData.icon
+                                                label: modelData.label
+                                                type: modelData.type
+                                                options: root.tlpOptions(modelData)
+                                                yesValue: modelData.onValue !== undefined ? modelData.onValue : "1"
+                                                noValue: modelData.offValue !== undefined ? modelData.offValue : "0"
+                                                from: modelData.min !== undefined ? modelData.min : 0
+                                                to: modelData.max !== undefined ? modelData.max : 100
+                                                unit: modelData.unit !== undefined ? modelData.unit : ""
+                                                value: root.tlpValue(k)
+                                                managed: root.tlpManaged(k)
+                                                source: root.tlpSource(k)
+                                                onCommit: newValue => root.tlpSet(k, newValue, modelData.label)
+                                                onReset: root.tlpReset([k])
+                                            }
+                                        }
+                                    }
+                                }
+
+                                SectionCard {
+                                    visible: root.tlpInstalled
+                                    width: parent.width
+                                    title: "Where changes go"
+                                    icon: "description"
+                                    caption: "Changes are written to " + (root.tlpInfo ? root.tlpInfo.dropin : "/etc/tlp.d/99-dms-cpufreq.conf")
+                                             + " and applied with tlp start, which also returns TLP to automatic mode. "
+                                             + "/etc/tlp.conf is read last and wins over this file."
+
+                                    ActionButton {
+                                        visible: root.tlpInfo !== null && root.tlpInfo.managed.length > 0
+                                        width: parent.width
+                                        variant: pop.confirm === "resetall" ? "filled" : "outlined"
+                                        danger: pop.confirm === "resetall"
+                                        icon: "restart_alt"
+                                        text: pop.confirm === "resetall" ? "Tap again to reset everything" : "Reset all plugin settings"
+                                        onClicked: {
+                                            if (pop.confirm === "resetall") { pop.confirm = ""; root.tlpReset([]) }
+                                            else pop.confirm = "resetall"
+                                        }
                                     }
                                 }
                             }
