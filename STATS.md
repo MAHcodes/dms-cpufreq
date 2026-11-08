@@ -39,20 +39,20 @@ icon follows charge level and charging state. Icons are toggled per metric with 
 ## CPU tab
 
 One tab for the whole processor — frequency, temperature and usage used to be separate tabs.
-A header row holds one compact card per reading, followed by a section per group.
+Each group keeps its full-width hero card above its sections, exactly as the old tabs had them.
 
 | Stat | Meaning | Source | Notes |
 |---|---|---|---|
-| Header: frequency | The avg/min/max (per the summary setting) current clock of all logical cores | `scaling_cur_freq` per CPU, kHz | Card caption says which of the three; progress = position between hardware min and max. |
-| Header: temperature | CPU package temperature | hwmon `coretemp`/`k10temp`/`zenpower`/`cpu_thermal` `temp*_input` | Prefers a `Package id`/`Tctl`/`Tdie` label; falls back to the first unlabeled sensor, then to the hottest core. °C or °F out. |
-| Header: usage | Busy share of all cores since the previous poll | `/proc/stat` `cpu` line | `100 × (Δtotal − Δidle)/Δtotal`, idle includes iowait. Needs two polls, so the very first reading is 0%. |
+| Hero: frequency | The avg/min/max (per the summary setting) current clock of all logical cores | `scaling_cur_freq` per CPU, kHz | Progress bar = position between hardware min and max. The caption says which of the three you are seeing. |
+| Hero: temperature | CPU package temperature | hwmon `coretemp`/`k10temp`/`zenpower`/`cpu_thermal` `temp*_input` | Prefers a `Package id`/`Tctl`/`Tdie` label; falls back to the first unlabeled sensor, then to the hottest core. millidegree input; °C or °F out. |
+| Hero: usage | Busy share of all cores since the previous poll | `/proc/stat` `cpu` line | `100 × (Δtotal − Δidle)/Δtotal`, where idle includes iowait. Needs two polls, so the very first reading is 0%. |
 | Turbo boost | Whether turbo/boost frequencies are allowed | `intel_pstate/no_turbo` (inverted) or `cpufreq/boost` | On intel_pstate with turbo off, the *effective* max is the base frequency, and the slider max follows it. |
 | Profile | Which preset matches live sysfs: saver / balanced / performance, or none (custom) | derived | Presets set governor + EPP + turbo + `min=hw max=hw` in one `apply`. Anything you change afterwards makes it "custom" (no segment highlighted). |
 | Governor | Kernel cpufreq governor for all policies | `scaling_available_governors`, applied to every policy | Written to all `policy*/scaling_governor` at once. |
 | Energy preference | Intel HWP energy/performance hint (EPP) | `energy_performance_available_preferences` | Only present when the driver exposes it (intel_pstate/amd-pstate with HWP). Some governors refuse an EPP write; that failure is non-fatal. |
 | Minimum / Maximum | Scaling limits shared by all cores | `scaling_min_freq` / `scaling_max_freq` | Sliders step 100 MHz, clamped to hardware limits. Dragging min above max (or vice versa) moves both bounds so the kernel never sees a crossed pair. |
 | Per-core frequency | Current clock of each logical core | `scaling_cur_freq` | Grid columns 1–6 in the settings. Mini bar = fraction of the hw min–max range. |
-| Physical cores | One temperature sensor per physical core | same hwmon, labels `Core N` | Sensors are per physical core: a 6c/12t CPU reports 6 readings, not 12. The card caption shows the core/thread counts. |
+| Physical cores | One temperature sensor per physical core | same hwmon, labels `Core N` | Sensors are per physical core: a 6c/12t CPU reports 6 readings, not 12. The hero caption shows the core/thread counts. |
 | Per-core usage | Same formula as the usage header, per logical CPU | `/proc/stat` `cpuN` lines | A core that appeared since the last poll reads 0 until it has a delta. |
 
 `hwMin`/`hwMax` used above are `cpuinfo_min_freq`/`cpuinfo_max_freq` — the hardware range the

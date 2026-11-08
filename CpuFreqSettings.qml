@@ -159,7 +159,7 @@ PluginSettings {
         visible: root.tab === "cpu"
         settingKey: "freqMode"
         label: "Summary value"
-        description: "Average, minimum or maximum frequency: the popout header card, and the bar until you change the toggles above"
+        description: "Average, minimum or maximum frequency: the popout hero card, and the bar until you change the toggles above"
         options: [
             { label: "Average", value: "avg" },
             { label: "Minimum", value: "min" },

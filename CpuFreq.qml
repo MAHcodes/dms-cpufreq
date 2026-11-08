@@ -85,69 +85,6 @@ PluginComponent {
         }
     }
 
-    // Compact variant of the hero card for the CPU tab header: one card per
-    // reading (frequency / temperature / usage), side by side.
-    component HeroStat: StyledRect {
-        id: hs
-
-        property string icon: ""
-        property string value: ""
-        property string caption: ""
-        property real progress: -1          // 0..100, negative hides the bar
-
-        radius: Theme.cornerRadiusL
-        color: Theme.primaryContainer
-        height: col.implicitHeight + Theme.spacingM * 2
-
-        Column {
-            id: col
-            x: Theme.spacingM
-            y: Theme.spacingM
-            width: parent.width - Theme.spacingM * 2
-            spacing: Theme.spacingS
-
-            Row {
-                id: hsHead
-                width: parent.width
-                spacing: Theme.spacingS
-
-                DankIcon {
-                    id: hsIco
-                    name: hs.icon
-                    size: Theme.iconSize - 8
-                    color: Theme.onPrimaryContainer
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    StyledText {
-                        text: hs.value
-                        font.pixelSize: Theme.fontSizeLarge
-                        font.weight: Font.Bold
-                        color: Theme.onPrimaryContainer
-                        elide: Text.ElideRight
-                        width: Math.min(implicitWidth, hsHead.width - hsIco.width - hsHead.spacing)
-                    }
-                    StyledText {
-                        text: hs.caption
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.onPrimaryContainer
-                        opacity: 0.8
-                        elide: Text.ElideRight
-                        width: Math.min(implicitWidth, hsHead.width - hsIco.width - hsHead.spacing)
-                    }
-                }
-            }
-
-            Meter {
-                visible: hs.progress >= 0
-                width: parent.width
-                value: hs.progress
-            }
-        }
-    }
-
     // Material 3 filled section card: an optional small header over a padded
     // body column. Children of a `SectionCard { ... }` land in that body.
     component SectionCard: StyledRect {
@@ -1443,41 +1380,13 @@ PluginComponent {
                             width: parent.width
                             spacing: Theme.spacingL
 
-                            // header: one compact card per reading
-                            Row {
-                                id: cpuHead
+                            HeroCard {
+                                visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
                                 width: parent.width
-                                spacing: Theme.spacingM
-                                readonly property int cards:
-                                    (hFreq.visible ? 1 : 0) + (hTemp.visible ? 1 : 0) + (hUsage.visible ? 1 : 0)
-
-                                HeroStat {
-                                    id: hFreq
-                                    visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
-                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
-                                    icon: "speed"
-                                    value: root.fmtFreq(root.panelFreq(), false)
-                                    caption: root.modeLabel()
-                                    progress: root.freqFraction(root.panelFreq())
-                                }
-                                HeroStat {
-                                    id: hTemp
-                                    visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
-                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
-                                    icon: "thermostat"
-                                    value: root.fmtTemp(root.pkgTemp(), false)
-                                    caption: "Package"
-                                    progress: root.pkgTemp() === null ? -1 : root.clamp100(root.pkgTemp() / 1000)
-                                }
-                                HeroStat {
-                                    id: hUsage
-                                    visible: root.cpu != null
-                                    width: (cpuHead.width - (cpuHead.cards - 1) * cpuHead.spacing) / Math.max(1, cpuHead.cards)
-                                    icon: "show_chart"
-                                    value: Math.round(root.usageAll) + "%"
-                                    caption: "Usage"
-                                    progress: root.usageAll
-                                }
+                                icon: "speed"
+                                value: root.fmtFreq(root.panelFreq(), false)
+                                caption: root.modeLabel() + " frequency"
+                                progress: root.freqFraction(root.panelFreq())
                             }
 
                             SectionCard {
@@ -1598,13 +1507,23 @@ PluginComponent {
                                 }
                             }
 
+                            HeroCard {
+                                visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
+                                width: parent.width
+                                icon: "thermostat"
+                                value: root.fmtTemp(root.pkgTemp(), false)
+                                caption: "CPU package"
+                                         + (root.cpu && root.cpu.physicalCores > 0
+                                            ? " · " + root.cpu.physicalCores + " cores, " + root.cpu.threads + " threads"
+                                            : "")
+                                progress: root.pkgTemp() === null ? -1 : root.clamp100(root.pkgTemp() / 1000)
+                            }
+
                             SectionCard {
                                 visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
                                 title: "Physical cores"
                                 icon: "developer_board"
-                                caption: root.cpu && root.cpu.physicalCores > 0
-                                         ? root.cpu.physicalCores + " cores · " + root.cpu.threads + " threads" : ""
 
                                 Grid {
                                     id: tempGrid
@@ -1624,6 +1543,14 @@ PluginComponent {
                                         }
                                     }
                                 }
+                            }
+
+                            HeroCard {
+                                width: parent.width
+                                icon: "memory"
+                                value: Math.round(root.usageAll) + "%"
+                                caption: "CPU usage"
+                                progress: root.usageAll
                             }
 
                             SectionCard {
