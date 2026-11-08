@@ -1312,8 +1312,8 @@ PluginComponent {
     }
 
     // ========================================================== popout =====
-    popoutWidth: 540
-    popoutHeight: 660
+    popoutWidth: 580
+    popoutHeight: 760
 
     popoutContent: Component {
         PopoutComponent {
@@ -1393,7 +1393,7 @@ PluginComponent {
                             HeroCard {
                                 visible: root.cpu != null && root.cpu.hasFreq === true && root.cores.length > 0
                                 width: parent.width
-                                icon: "speed"
+                                icon: root.metricIcon("cpu")
                                 title: "Frequency"
                                 value: root.fmtFreq(root.panelFreq(), false)
                                 caption: root.modeLabel()
@@ -1422,7 +1422,11 @@ PluginComponent {
                                     width: parent.width
                                     spacing: Theme.spacingXS
 
-                                    FieldLabel { text: "Profile"; icon: "tune" }
+                                    FieldLabel {
+                                        text: "Profile"
+                                        icon: "tune"
+                                        sub: "One tap sets governor, EPP, turbo and limits"
+                                    }
                                     SegmentedControl {
                                         width: parent.width
                                         options: root.profileOptions
@@ -1457,6 +1461,29 @@ PluginComponent {
                                         options: root.eppOptions
                                         current: root.cpu ? root.cpu.epp : ""
                                         onSelected: value => root.setEpp(value)
+                                    }
+                                }
+
+                                // frequency limits: titled group of its own inside the card
+                                Rectangle {
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
+                                    width: parent.width
+                                    height: 1
+                                    color: Theme.outlineStrong
+                                    opacity: 0.4
+                                }
+
+                                Column {
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
+                                    width: parent.width
+                                    spacing: Theme.spacingXS
+
+                                    FieldLabel {
+                                        text: "Frequency limits"
+                                        icon: "swap_vert"
+                                        sub: "Shared by all cores, in steps of 100 MHz"
                                     }
                                 }
 
@@ -1495,7 +1522,7 @@ PluginComponent {
                                 visible: root.cores.length > 0 && root.opt("freqCores", true)
                                 width: parent.width
                                 title: "Per-core frequency"
-                                icon: "developer_board"
+                                icon: root.metricIcon("cpu")
 
                                 Grid {
                                     id: freqGrid
@@ -1519,7 +1546,7 @@ PluginComponent {
                             HeroCard {
                                 visible: root.cpu != null && (root.pkgTemp() !== null || root.tempCoreList().length > 0)
                                 width: parent.width
-                                icon: "thermostat"
+                                icon: root.metricIcon("cpu")
                                 title: "Temperature"
                                 value: root.fmtTemp(root.pkgTemp(), false)
                                 caption: "CPU package"
@@ -1533,7 +1560,7 @@ PluginComponent {
                                 visible: root.tempCoreList().length > 0 && root.opt("tempCores", true)
                                 width: parent.width
                                 title: "Physical cores"
-                                icon: "developer_board"
+                                icon: root.metricIcon("cpu")
 
                                 Grid {
                                     id: tempGrid
@@ -1557,7 +1584,7 @@ PluginComponent {
 
                             HeroCard {
                                 width: parent.width
-                                icon: "memory"
+                                icon: root.metricIcon("cpu")
                                 title: "Usage"
                                 value: Math.round(root.usageAll) + "%"
                                 caption: root.cpu && root.cpu.threads > 0 ? root.cpu.threads + " threads" : "CPU usage"
@@ -1568,7 +1595,7 @@ PluginComponent {
                                 visible: root.cores.length > 0 && root.opt("usageCores", true)
                                 width: parent.width
                                 title: "Per-core usage"
-                                icon: "developer_board"
+                                icon: root.metricIcon("cpu")
 
                                 Grid {
                                     id: usageGrid
