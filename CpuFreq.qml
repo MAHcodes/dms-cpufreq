@@ -286,21 +286,6 @@ PluginComponent {
     // optional divider between bar entries (see General settings)
     function barSep() { return opt("barSeparator", "none") }
 
-    // Per-value bar icons (used by barItems); "" falls back to the metric's
-    // own icon (battery charge keeps its dynamic icon that way).
-    readonly property var barValueIcons: ({
-        freq: { min: "vertical_align_bottom", avg: "speed", max: "vertical_align_top" },
-        mem: { percent: "memory", used: "inventory_2", available: "check_circle", free: "cloud", used_total: "developer_board" },
-        gpu: { usage: "show_chart", temp: "thermostat", vram: "memory", power: "bolt", clock: "speed" },
-        disk: { percent: "storage", used: "hard_drive", free: "cloud", used_total: "developer_board" },
-        bat: { percent: "", time: "schedule", power: "bolt", energy: "battery_charging_full" }
-    })
-
-    function barItemIcon(key, val) {
-        const m = barValueIcons[key]
-        return (m && m[val]) || metricIcon(key)
-    }
-
     // which helper sections are worth collecting (nvidia-smi etc. only when needed)
     function sections() {
         const need = k => opt(k + "Bar", k === "freq") || opt(k + "Tab", true)
@@ -697,16 +682,16 @@ PluginComponent {
         return ["", ""]
     }
 
-    // Every bar item: one per (metric × shown value), each with its own icon,
-    // so a multi-value metric reads as separate entries. `used/total` stays one
-    // item because it is one value.
+    // Every bar item: one per (metric × shown value), all sharing the metric's
+    // icon, so a multi-value metric reads as separate entries.
+    // `used/total` stays one item because it is one value.
     function barItems() {
         const out = []
         for (const key of metricKeys) {
             if (!barShown(key)) continue
             for (const v of barValuesOn(key)) {
                 const p = barPartsFor(key, v)
-                out.push({ key: key, icon: barItemIcon(key, v), num: p[0], unit: p[1] })
+                out.push({ key: key, icon: metricIcon(key), num: p[0], unit: p[1] })
             }
         }
         return out

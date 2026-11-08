@@ -20,8 +20,8 @@ as "powered down" and never queried, so reading stats never wakes it.
 
 One entry per metric with *show in bar* on, separated by two spaces (a dot or line separator is
 optional, General settings). Each metric can show several of its values at once — any mix of its
-"Bar: …" toggles, and each value is its own item with its own icon, separated like any other
-entry (GPU usage + temperature reads `▤ 45% · ◎ 65°C`). In vertical bars the unit stacks under
+"Bar: …" toggles, each value its own item sharing the metric's icon, separated like any other
+entry (GPU usage + temperature reads `▤ 45% · ▤ 65°C`). In vertical bars the unit stacks under
 the number in a smaller font, and `/`-joined numbers (`used/total`) split over lines (`12.1`
 over `/16.0`) so they fit. Formatting rules:
 
@@ -34,9 +34,8 @@ over `/16.0`) so they fit. Formatting rules:
 * Battery: any mix of charge %, time to empty/limit as `h:mm`, power draw `12.3 W`, energy `45.6 Wh`.
 * GPU: any mix of usage %, temp, VRAM used %, power draw `123.4 W`, graphics clock in MHz.
 
-Every bar item has its own icon, one per value (min/avg/max frequency get the down/flash/up
-arrows, GPU gets one per value type, and so on); the battery charge icon follows charge level and
-charging state. Icons are toggled per metric with *show icon in bar*.
+Every bar item shows its metric's icon, so all of a metric's values share one icon; the battery
+icon follows charge level and charging state. Icons are toggled per metric with *show icon in bar*.
 
 ## Frequency tab
 
