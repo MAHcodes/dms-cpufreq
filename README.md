@@ -14,7 +14,7 @@ Six metrics, each with its own **popout tab** and its own **settings tab**:
 
 | Metric | Popout tab | Per-metric settings |
 |---|---|---|
-| CPU | hero cards for frequency, temperature and usage, each above its group; turbo, profile, governor, energy preference, min/max limits; per-core frequency, temperature and usage grids | bar values (any mix: min/avg/max frequency, temperature, usage), summary value, unit GHz/MHz, decimals, temperature unit C/F, show/hide min/max limit, grid columns per per-core grid |
+| CPU | hero cards for frequency, temperature and usage, each above its group; Performance card (turbo, profile, governor, energy preference, min/max limit sliders); per-core frequency, temperature and usage grids | bar values (any mix: min/avg/max frequency, temperature, usage), summary value, unit GHz/MHz, decimals, temperature unit C/F, toggle each popout section (performance incl. limit sliders, per-core grids), grid columns per per-core grid |
 | RAM | used / available / free / cached / buffers / shared / total / swap / ZRAM | bar values (any mix: percent, used, available, free, used/total), unit |
 | GPU | everything the driver exposes: usage (GPU/mem/encoder/decoder), VRAM (used/free/reserved), temps, fan, power draw + limits, graphics/memory/SM/video clocks + max, P-state, PCIe gen/width, VBIOS, driver version, persistence/display/compute mode, UUID/serial, active clock limiters and compute processes (AMD, Intel, NVIDIA) | bar values (any mix: usage, temp, VRAM, power draw, graphics clock), which GPU, toggle each popout section (utilization, memory, thermals, power, clocks, bus & driver, processes) |
 | Fans | every fan reported by hwmon | bar value (fastest or average) |

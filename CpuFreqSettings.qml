@@ -191,6 +191,34 @@ PluginSettings {
         defaultValue: "1"
     }
 
+    SelectionSetting {
+        visible: root.tab === "cpu"
+        settingKey: "tempScale"
+        label: "Temperature unit"
+        options: [
+            { label: "Celsius", value: "C" },
+            { label: "Fahrenheit", value: "F" }
+        ]
+        defaultValue: "C"
+    }
+
+    StyledText {
+        visible: root.tab === "cpu"
+        width: parent.width
+        text: "Popout sections"
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Bold
+        color: Theme.surfaceVariantText
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuShowPerformance"
+        label: "Performance"
+        description: "Turbo, profile, governor, energy preference and the frequency limit sliders"
+        defaultValue: true
+    }
+
     ToggleSetting {
         visible: root.tab === "cpu"
         settingKey: "freqShowMin"
@@ -221,22 +249,18 @@ PluginSettings {
         defaultValue: "2"
     }
 
-    SelectionSetting {
-        visible: root.tab === "cpu"
-        settingKey: "tempScale"
-        label: "Temperature unit"
-        options: [
-            { label: "Celsius", value: "C" },
-            { label: "Fahrenheit", value: "F" }
-        ]
-        defaultValue: "C"
-    }
-
     ToggleSetting {
         visible: root.tab === "cpu"
         settingKey: "tempCores"
         label: "Show per-core temperatures"
         description: "One sensor per physical core; hidden automatically if the CPU reports only a package sensor"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "usageCores"
+        label: "Show per-core usage"
         defaultValue: true
     }
 

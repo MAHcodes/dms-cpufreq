@@ -1401,12 +1401,15 @@ PluginComponent {
                             }
 
                             SectionCard {
+                                visible: root.opt("cpuShowPerformance", true)
+                                         || root.opt("freqShowMin", true) || root.opt("freqShowMax", true)
                                 width: parent.width
                                 title: "Performance"
                                 icon: "tune"
 
                                 SwitchRow {
-                                    visible: root.cpu != null && root.cpu.turboSupported === true
+                                    visible: root.opt("cpuShowPerformance", true)
+                                             && root.cpu != null && root.cpu.turboSupported === true
                                     width: parent.width
                                     icon: "bolt"
                                     label: "Turbo boost"
@@ -1415,6 +1418,7 @@ PluginComponent {
                                 }
 
                                 Column {
+                                    visible: root.opt("cpuShowPerformance", true)
                                     width: parent.width
                                     spacing: Theme.spacingXS
 
@@ -1428,7 +1432,7 @@ PluginComponent {
                                 }
 
                                 Column {
-                                    visible: root.governorOptions.length > 0
+                                    visible: root.opt("cpuShowPerformance", true) && root.governorOptions.length > 0
                                     width: parent.width
                                     spacing: Theme.spacingXS
 
@@ -1442,7 +1446,7 @@ PluginComponent {
                                 }
 
                                 Column {
-                                    visible: root.eppOptions.length > 0
+                                    visible: root.opt("cpuShowPerformance", true) && root.eppOptions.length > 0
                                     width: parent.width
                                     spacing: Theme.spacingXS
 
@@ -1455,18 +1459,11 @@ PluginComponent {
                                         onSelected: value => root.setEpp(value)
                                     }
                                 }
-                            }
-
-                            SectionCard {
-                                visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
-                                         && (root.opt("freqShowMin", true) || root.opt("freqShowMax", true))
-                                width: parent.width
-                                title: "Frequency limits"
-                                icon: "swap_vert"
 
                                 SliderRow {
                                     id: minRow
-                                    visible: root.opt("freqShowMin", true)
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && root.opt("freqShowMin", true)
                                     width: parent.width
                                     icon: "vertical_align_bottom"
                                     label: "Minimum"
@@ -1480,7 +1477,8 @@ PluginComponent {
 
                                 SliderRow {
                                     id: maxRow
-                                    visible: root.opt("freqShowMax", true)
+                                    visible: root.cpu != null && root.cpu.hwMax > root.cpu.hwMin
+                                             && root.opt("freqShowMax", true)
                                     width: parent.width
                                     icon: "vertical_align_top"
                                     label: "Maximum"
@@ -1567,7 +1565,7 @@ PluginComponent {
                             }
 
                             SectionCard {
-                                visible: root.cores.length > 0
+                                visible: root.cores.length > 0 && root.opt("usageCores", true)
                                 width: parent.width
                                 title: "Per-core usage"
                                 icon: "developer_board"

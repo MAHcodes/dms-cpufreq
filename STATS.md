@@ -40,6 +40,8 @@ icon follows charge level and charging state. Icons are toggled per metric with 
 
 One tab for the whole processor — frequency, temperature and usage used to be separate tabs.
 Each group keeps its full-width hero card above its sections, exactly as the old tabs had them.
+Every section can be hidden in the plugin settings; the frequency limit sliders live in the
+Performance card, next to the controls they belong with.
 
 | Stat | Meaning | Source | Notes |
 |---|---|---|---|
@@ -50,7 +52,7 @@ Each group keeps its full-width hero card above its sections, exactly as the old
 | Profile | Which preset matches live sysfs: saver / balanced / performance, or none (custom) | derived | Presets set governor + EPP + turbo + `min=hw max=hw` in one `apply`. Anything you change afterwards makes it "custom" (no segment highlighted). |
 | Governor | Kernel cpufreq governor for all policies | `scaling_available_governors`, applied to every policy | Written to all `policy*/scaling_governor` at once. |
 | Energy preference | Intel HWP energy/performance hint (EPP) | `energy_performance_available_preferences` | Only present when the driver exposes it (intel_pstate/amd-pstate with HWP). Some governors refuse an EPP write; that failure is non-fatal. |
-| Minimum / Maximum | Scaling limits shared by all cores | `scaling_min_freq` / `scaling_max_freq` | Sliders step 100 MHz, clamped to hardware limits. Dragging min above max (or vice versa) moves both bounds so the kernel never sees a crossed pair. |
+| Minimum / Maximum | Scaling limits shared by all cores (sliders in the Performance card) | `scaling_min_freq` / `scaling_max_freq` | Sliders step 100 MHz, clamped to hardware limits. Dragging min above max (or vice versa) moves both bounds so the kernel never sees a crossed pair. |
 | Per-core frequency | Current clock of each logical core | `scaling_cur_freq` | Grid columns 1–6 in the settings. Mini bar = fraction of the hw min–max range. |
 | Physical cores | One temperature sensor per physical core | same hwmon, labels `Core N` | Sensors are per physical core: a 6c/12t CPU reports 6 readings, not 12. The hero caption shows the core/thread counts. |
 | Per-core usage | Same formula as the usage header, per logical CPU | `/proc/stat` `cpuN` lines | A core that appeared since the last poll reads 0 until it has a delta. |
