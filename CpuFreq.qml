@@ -1427,7 +1427,6 @@ PluginComponent {
                                     FieldLabel {
                                         text: "Frequency limits"
                                         icon: "swap_vert"
-                                        sub: "Shared by all cores, in steps of 100 MHz"
                                     }
                                 }
 
