@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Shapes
 import Quickshell
 import Quickshell.Io
 import qs.Common
@@ -13,9 +14,70 @@ PluginComponent {
 
     property var popoutService: null
 
-    // Hero card for the top of each tab: icon + value + caption in the accent
-    // color. With a key set, clicking it collapses the section cards
-    // underneath (which carry the same key as their `group`).
+    // Material 3 circular progress indicator with rounded caps (children are centred inside).
+    component Ring: Item {
+        id: ring
+
+        property real value: 0                  // 0..100
+        property real strokeWidth: 7
+        property color trackColor: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+        property color fillColor: Theme.primary
+        default property alias content: holder.data
+
+        implicitWidth: 64
+        implicitHeight: 64
+
+        readonly property real radius_: (Math.min(width, height) - strokeWidth) / 2
+        property real animated: Math.max(0, Math.min(100, value))
+        Behavior on animated { NumberAnimation { duration: 350; easing.type: Easing.OutCubic } }
+
+        Shape {
+            anchors.fill: parent
+            preferredRendererType: Shape.CurveRenderer
+            layer.enabled: true
+            layer.samples: 4
+
+            ShapePath {
+                strokeColor: ring.trackColor
+                strokeWidth: ring.strokeWidth
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                PathAngleArc {
+                    centerX: ring.width / 2
+                    centerY: ring.height / 2
+                    radiusX: ring.radius_
+                    radiusY: ring.radius_
+                    startAngle: 0
+                    sweepAngle: 360
+                }
+            }
+
+            ShapePath {
+                strokeColor: ring.animated > 0.4 ? ring.fillColor : "transparent"
+                strokeWidth: ring.strokeWidth
+                fillColor: "transparent"
+                capStyle: ShapePath.RoundCap
+                PathAngleArc {
+                    centerX: ring.width / 2
+                    centerY: ring.height / 2
+                    radiusX: ring.radius_
+                    radiusY: ring.radius_
+                    startAngle: -90
+                    sweepAngle: 360 * ring.animated / 100
+                }
+            }
+        }
+
+        Item {
+            id: holder
+            anchors.fill: parent
+        }
+    }
+
+    // Hero card for the top of each tab (Material 3 expressive): a progress ring
+    // with the icon inside, a big value and a caption. With a key set, clicking
+    // it collapses the section cards underneath (which carry the same key as
+    // their `group`).
     component HeroCard: StyledRect {
         id: hl
 
@@ -23,24 +85,34 @@ PluginComponent {
         property string title: ""
         property string value: ""
         property string caption: ""
-        property real progress: -1          // 0..100, negative hides the bar
+        property real progress: -1          // 0..100, negative shows a plain icon bubble
         property string key: ""             // group key: clicking collapses the sections below
 
-        width: parent ? parent.width : 0
-        height: col.implicitHeight + Theme.spacingL * 2
-        radius: Theme.cornerRadiusL
-        color: Theme.primaryContainer
+        readonly property real chevronSpace: hl.key !== "" ? 36 + Theme.spacingM : 0
 
-        DankIcon {
+        width: parent ? parent.width : 0
+        height: Math.max(head.implicitHeight, 64) + Theme.spacingL * 2
+        radius: 28
+        color: Theme.surfaceContainerHigh
+
+        Rectangle {
             visible: hl.key !== ""
             anchors.right: parent.right
             anchors.rightMargin: Theme.spacingL
             anchors.verticalCenter: parent.verticalCenter
-            name: "expand_more"
-            size: Theme.iconSize - 10
-            color: Theme.onPrimaryContainer
-            rotation: root.collapsed[hl.key] === true ? -90 : 0
-            Behavior on rotation { NumberAnimation { duration: 150 } }
+            width: 36
+            height: 36
+            radius: 18
+            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.14)
+
+            DankIcon {
+                anchors.centerIn: parent
+                name: "expand_more"
+                size: Theme.iconSize - 6
+                color: Theme.primary
+                rotation: root.collapsed[hl.key] === true ? -90 : 0
+                Behavior on rotation { NumberAnimation { duration: 150 } }
+            }
         }
 
         MouseArea {
@@ -49,84 +121,87 @@ PluginComponent {
             onClicked: if (hl.key !== "") root.toggleCollapsed(hl.key)
         }
 
-        Column {
-            id: col
+        Row {
+            id: head
             x: Theme.spacingL
-            y: Theme.spacingL
+            anchors.verticalCenter: parent.verticalCenter
             width: parent.width - Theme.spacingL * 2
-            spacing: Theme.spacingS
+            spacing: Theme.spacingL
 
-            StyledText {
-                visible: hl.title !== ""
-                text: hl.title
-                font.pixelSize: Theme.fontSizeSmall
-                font.weight: Font.Bold
-                color: Theme.onPrimaryContainer
-                opacity: 0.8
-            }
-
-            Row {
-                id: head
-                width: parent.width
-                spacing: Theme.spacingM
-
-                Rectangle {
-                    width: 44
-                    height: 44
-                    radius: 22
-                    color: Qt.rgba(Theme.onPrimaryContainer.r, Theme.onPrimaryContainer.g,
-                                   Theme.onPrimaryContainer.b, 0.12)
-
-                    DankIcon {
-                        anchors.centerIn: parent
-                        name: hl.icon
-                        size: Theme.iconSize
-                        color: Theme.onPrimaryContainer
-                    }
-                }
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    StyledText {
-                        text: hl.value
-                        font.pixelSize: Theme.fontSizeXXLarge
-                        font.weight: Font.Bold
-                        color: Theme.onPrimaryContainer
-                        elide: Text.ElideRight
-                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM
-                                        - (hl.key !== "" ? Theme.iconSize + Theme.spacingM : 0))
-                    }
-                    StyledText {
-                        text: hl.caption
-                        font.pixelSize: Theme.fontSizeSmall
-                        color: Theme.onPrimaryContainer
-                        opacity: 0.8
-                        elide: Text.ElideRight
-                        width: Math.min(implicitWidth, head.width - 44 - Theme.spacingM
-                                        - (hl.key !== "" ? Theme.iconSize + Theme.spacingM : 0))
-                    }
-                }
-            }
-
-            Meter {
+            Ring {
                 visible: hl.progress >= 0
-                width: parent.width
+                width: 64
+                height: 64
                 value: hl.progress
+                anchors.verticalCenter: parent.verticalCenter
+
+                DankIcon {
+                    anchors.centerIn: parent
+                    name: hl.icon
+                    size: Theme.iconSize - 2
+                    color: Theme.primary
+                }
+            }
+
+            Rectangle {
+                visible: hl.progress < 0
+                width: 64
+                height: 64
+                radius: 32
+                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                anchors.verticalCenter: parent.verticalCenter
+
+                DankIcon {
+                    anchors.centerIn: parent
+                    name: hl.icon
+                    size: Theme.iconSize - 2
+                    color: Theme.primary
+                }
+            }
+
+            Column {
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+                readonly property real avail: head.width - 64 - head.spacing - hl.chevronSpace
+
+                StyledText {
+                    visible: hl.title !== ""
+                    text: hl.title
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.Medium
+                    color: Theme.primary
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.avail)
+                }
+                StyledText {
+                    text: hl.value
+                    font.pixelSize: Theme.fontSizeXXLarge + 6
+                    font.weight: Font.DemiBold
+                    color: Theme.surfaceText
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.avail)
+                }
+                StyledText {
+                    text: hl.caption
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: Theme.surfaceVariantText
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, parent.avail)
+                }
             }
         }
     }
 
-    // Material 3 filled section card: an optional small header over a padded
-    // body column. Clicking the header collapses the body (session state, not
-    // persisted). Children of a `SectionCard { ... }` land in that body.
+    // Material 3 filled section card: a header with a tonal icon bubble over a
+    // padded body column. Clicking the header collapses the body (session state,
+    // not persisted). Children of a `SectionCard { ... }` land in that body.
     component SectionCard: StyledRect {
         id: card
 
         property string title: ""
         property string icon: ""
         property string caption: ""
-        property real bodySpacing: Theme.spacingXS
+        property real bodySpacing: Theme.spacingS
         property string key: ""        // stable id; keyed cards remember their collapse state
         property string group: ""      // hero card key: hiding the group removes these cards entirely
         property bool show: true        // whether the section applies at all (settings / data)
@@ -137,42 +212,53 @@ PluginComponent {
 
         default property alias content: body.data
 
+        readonly property real pad: Theme.spacingL
+
         width: parent ? parent.width : 0
-        height: layout.implicitHeight + Theme.spacingM * 2
-        radius: Theme.cornerRadiusL
-        color: Theme.surfaceContainer
+        height: layout.implicitHeight + pad * 2
+        radius: 24
+        color: Theme.surfaceContainerHigh
 
         Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
 
         Column {
             id: layout
-            x: Theme.spacingM
-            y: Theme.spacingM
-            width: card.width - Theme.spacingM * 2
-            spacing: Theme.spacingS
+            x: card.pad
+            y: card.pad
+            width: card.width - card.pad * 2
+            spacing: Theme.spacingM
 
             Item {
                 visible: card.title !== "" || card.icon !== ""
                 width: parent.width
-                height: headRow.implicitHeight
+                height: Math.max(headRow.implicitHeight, 32)
 
                 Row {
                     id: headRow
-                    spacing: Theme.spacingS
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.spacingS + 2
 
-                    DankIcon {
+                    Rectangle {
                         visible: card.icon !== ""
-                        name: card.icon
-                        size: Theme.iconSize - 8
-                        color: Theme.primary
+                        width: 32
+                        height: 32
+                        radius: 16
+                        color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.16)
                         anchors.verticalCenter: parent.verticalCenter
+
+                        DankIcon {
+                            anchors.centerIn: parent
+                            name: card.icon
+                            size: Theme.iconSize - 8
+                            color: Theme.primary
+                        }
                     }
                     StyledText {
                         visible: card.title !== ""
                         text: card.title
-                        font.pixelSize: Theme.fontSizeSmall
-                        font.weight: Font.Bold
-                        color: Theme.surfaceVariantText
+                        font.pixelSize: Theme.fontSizeMedium
+                        font.weight: Font.Medium
+                        color: Theme.surfaceText
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -182,7 +268,7 @@ PluginComponent {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     name: "expand_more"
-                    size: Theme.iconSize - 10
+                    size: Theme.iconSize - 6
                     color: Theme.surfaceVariantText
                     rotation: card.expanded ? 0 : -90
                     Behavior on rotation { NumberAnimation { duration: 150 } }
@@ -1396,7 +1482,7 @@ PluginComponent {
     }
 
     // ========================================================== popout =====
-    popoutWidth: 500
+    popoutWidth: 650
     popoutHeight: 800
 
     popoutContent: Component {
@@ -1604,11 +1690,12 @@ PluginComponent {
                                     width: parent.width
                                     columns: root.freqColumns
                                     columnSpacing: Theme.spacingM
-                                    rowSpacing: Theme.spacingXS
+                                    rowSpacing: Theme.spacingM
 
                                     Repeater {
                                         model: root.cores.length
                                         delegate: StatRow {
+                                            tile: true
                                             width: (freqGrid.width - (root.freqColumns - 1) * Theme.spacingM) / root.freqColumns
                                             label: "C" + root.coreId(index)
                                             value: root.fmtFreq(root.coreFreq(index), false)
@@ -1645,11 +1732,12 @@ PluginComponent {
                                     width: parent.width
                                     columns: root.tempColumns
                                     columnSpacing: Theme.spacingM
-                                    rowSpacing: Theme.spacingXS
+                                    rowSpacing: Theme.spacingM
 
                                     Repeater {
                                         model: root.tempCoreList().length
                                         delegate: StatRow {
+                                            tile: true
                                             width: (tempGrid.width - (root.tempColumns - 1) * Theme.spacingM) / root.tempColumns
                                             icon: "thermostat"
                                             label: "Core " + (root.tempCoreList()[index] ? root.tempCoreList()[index].id : index)
@@ -1683,11 +1771,12 @@ PluginComponent {
                                     width: parent.width
                                     columns: root.usageColumns
                                     columnSpacing: Theme.spacingM
-                                    rowSpacing: Theme.spacingXS
+                                    rowSpacing: Theme.spacingM
 
                                     Repeater {
                                         model: root.cores.length
                                         delegate: StatRow {
+                                            tile: true
                                             width: (usageGrid.width - (root.usageColumns - 1) * Theme.spacingM) / root.usageColumns
                                             label: "C" + root.coreId(index)
                                             value: Math.round(root.coreUsage(index)) + "%"

@@ -119,18 +119,22 @@ asking. Use `bash install.sh --auth` for prompts instead; re-run the installer t
 
 ## Design
 
-Components follow Material 3: primary tabs, a primary-container hero card per tab, filled
-surface-container cards for each group of rows (click a card's header to collapse it, or its hero
-card to hide the whole group — remembered across popout opens and reboots). Segmented buttons and
-action buttons are DMS's own Material You 3 components (`DButtonGroup` / `DButton` / `DToggle` /
-`DSlider` / `DTabBar` from `qs.DCommon.Widgets` — the same ones the built-in battery widget's
-power profile section uses), wrapped in thin adapters that keep this plugin's API. Progress
-indicators are custom, styled to match. Bar text and icons are sized exactly like the built-in
-DankBar widgets (`Theme.barTextSize`
+The popout follows Material You 3 (expressive), modelled on the DMS control-centre and battery panels:
+
+* **Pill tabs**: the active tab is a filled primary pill, the others are tonal pills (scrolls sideways if they do not fit).
+* **Hero cards**: a progress **ring** with the icon inside, a large value and a caption, on a 28 px rounded tonal card.
+  Click one to hide its whole group (remembered across popout opens and reboots).
+* **Section cards**: 24 px rounded tonal cards with a tonal icon bubble in the header; click the header to collapse.
+* **Tiles**: the per-core frequency, temperature and usage grids are rounded tonal tiles with a big centred value.
+* **Rows**: icon bubble, label, value and a thick pill progress bar.
+* **Buttons**: segmented options are separate pill buttons (selected = filled primary, with shape morph), action
+  buttons are pills with hover / press state layers. Switches and sliders are DMS's own `DToggle` / `DSlider`.
+
+Bar text and icons are sized exactly like the built-in DankBar widgets (`Theme.barTextSize`
 with the bar's thickness, font scale and "maximize widget text" settings, and the icon size DMS
 provides), so they follow your bar settings; the popout uses `fontSizeSmall` / `fontSizeMedium` /
-`fontSizeXXLarge` and elides long values. Colors only use `Theme` properties documented for DMS
-plugins.
+`fontSizeXXLarge` and elides long values. Colors only use `Theme` properties (`primary`, `surfaceText`,
+`surfaceVariantText`, `surfaceContainer*`, `error`, `warning`), so it follows your matugen / dynamic palette.
 
 ## Testing status
 

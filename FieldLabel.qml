@@ -13,7 +13,7 @@ Column {
     property string sub: ""
 
     width: parent ? parent.width : 0
-    spacing: 2
+    spacing: 4
 
     Row {
         spacing: Theme.spacingS
@@ -27,11 +27,9 @@ Column {
         }
         StyledText {
             text: fl.text
-            font.pixelSize: Theme.fontSizeSmall
-            font.weight: Font.Bold
-            font.capitalization: Font.AllCaps
-            font.letterSpacing: 0.8
-            color: Theme.surfaceVariantText
+            font.pixelSize: Theme.fontSizeMedium
+            font.weight: Font.Medium
+            color: Theme.surfaceText
             anchors.verticalCenter: parent.verticalCenter
         }
     }

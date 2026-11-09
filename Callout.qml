@@ -17,8 +17,8 @@ StyledRect {
 
     width: parent ? parent.width : 0
     height: row.implicitHeight + Theme.spacingM * 2
-    radius: Theme.cornerRadiusL
-    color: Qt.rgba(accent.r, accent.g, accent.b, 0.12)
+    radius: 20
+    color: Qt.rgba(accent.r, accent.g, accent.b, 0.14)
 
     Row {
         id: row
