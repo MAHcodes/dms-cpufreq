@@ -470,6 +470,14 @@ PluginSettings {
 
     ToggleSetting {
         visible: root.tab === "gpu"
+        settingKey: "gpuShowProcs"
+        label: "Processes"
+        description: "Compute processes currently using the GPU"
+        defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
         settingKey: "gpuShowPower"
         label: "Power"
         description: "Power draw and configured limits"
@@ -489,14 +497,6 @@ PluginSettings {
         settingKey: "gpuShowBus"
         label: "Bus & driver"
         description: "PCIe link, VBIOS, persistence/display/compute mode, UUID and serial"
-        defaultValue: true
-    }
-
-    ToggleSetting {
-        visible: root.tab === "gpu"
-        settingKey: "gpuShowProcs"
-        label: "Processes"
-        description: "Compute processes currently using the GPU"
         defaultValue: true
     }
 

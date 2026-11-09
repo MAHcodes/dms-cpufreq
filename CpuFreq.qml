@@ -88,7 +88,10 @@ PluginComponent {
         property real progress: -1          // 0..100, negative shows a plain icon bubble
         property string key: ""             // group key: clicking collapses the sections below
 
-        readonly property real chevronSpace: hl.key !== "" ? 36 + Theme.spacingM : 0
+        // Only collapsible when the group actually has an enabled section card.
+        // A section turned off in the settings leaves nothing to expand/collapse.
+        readonly property bool collapsible: hl.key !== "" && root.groupHasSections(hl.key)
+        readonly property real chevronSpace: hl.collapsible ? 36 + Theme.spacingM : 0
 
         width: parent ? parent.width : 0
         height: Math.max(head.implicitHeight, 64) + Theme.spacingL * 2
@@ -96,7 +99,7 @@ PluginComponent {
         color: Theme.surfaceContainerHigh
 
         Rectangle {
-            visible: hl.key !== ""
+            visible: hl.collapsible
             anchors.right: parent.right
             anchors.rightMargin: Theme.spacingL
             anchors.verticalCenter: parent.verticalCenter
@@ -117,8 +120,8 @@ PluginComponent {
 
         MouseArea {
             anchors.fill: parent
-            cursorShape: hl.key !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: if (hl.key !== "") root.toggleCollapsed(hl.key)
+            cursorShape: hl.collapsible ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: if (hl.collapsible) root.toggleCollapsed(hl.key)
         }
 
         Row {
@@ -209,6 +212,22 @@ PluginComponent {
         property bool expanded: root.collapsed[group] === true
                                 ? false
                                 : key !== "" ? root.collapsed[key] !== true : true
+
+        // Track whether this group still has any enabled section, so its hero
+        // card only offers a chevron (and collapsing) when there is something
+        // below it. Counted from `show`, not `visible`, so collapsing the group
+        // does not make the hero lose the chevron needed to expand it again.
+        property bool _groupCounted: false
+
+        function syncGroupCount() {
+            if (card._groupCounted === card.show) return
+            root.addSectionCount(card.group, card.show ? 1 : -1)
+            card._groupCounted = card.show
+        }
+
+        onShowChanged: syncGroupCount()
+        Component.onCompleted: syncGroupCount()
+        Component.onDestruction: if (card._groupCounted) root.addSectionCount(card.group, -1)
 
         default property alias content: body.data
 
@@ -1084,6 +1103,20 @@ PluginComponent {
 
     // is this hero-card group currently shown?
     function grpShown(g) { return collapsed[g] !== true }
+
+    // enabled SectionCards per hero-card group (see SectionCard.syncGroupCount)
+    property var sectionCounts: ({})
+
+    function addSectionCount(group, delta) {
+        const c = ({})
+        for (const k in sectionCounts) c[k] = sectionCounts[k]
+        c[group] = Math.max(0, (c[group] || 0) + delta)
+        sectionCounts = c
+    }
+
+    function groupHasSections(group) {
+        return group !== "" && sectionCounts[group] > 0
+    }
 
     function loadSaved() {
         try {
@@ -2051,6 +2084,26 @@ PluginComponent {
                                     }
 
                                     SectionCard {
+                                        show: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
+                                        width: parent.width
+                                        key: "gpu" + index + ":procs"
+                                        group: "g:gpu" + index
+                                        title: "Processes"
+                                        icon: "list"
+
+                                        Repeater {
+                                            model: gpuCol.procs.length
+                                            delegate: StatRow {
+                                                readonly property var p: gpuCol.procs[index] ? gpuCol.procs[index] : null
+                                                width: parent.width
+                                                icon: "apps"
+                                                label: p ? (p.name + " (" + p.pid + ")") : ""
+                                                value: p && p.mem != null ? root.fmtBytes(p.mem, "auto", true) : ""
+                                            }
+                                        }
+                                    }
+
+                                    SectionCard {
                                         show: gpuCol.g != null && root.gpuShow("Power")
                                                  && (gpuCol.g.powerW != null || root.gpuPowerLimits(gpuCol.g) !== "")
                                         width: parent.width
@@ -2183,26 +2236,6 @@ PluginComponent {
                                             icon: "tag"
                                             label: "Serial"
                                             value: gpuCol.g ? gpuCol.g.serial : ""
-                                        }
-                                    }
-
-                                    SectionCard {
-                                        show: gpuCol.g != null && root.gpuShow("Procs") && gpuCol.procs.length > 0
-                                        width: parent.width
-                                        key: "gpu" + index + ":procs"
-                                        group: "g:gpu" + index
-                                        title: "Processes"
-                                        icon: "list"
-
-                                        Repeater {
-                                            model: gpuCol.procs.length
-                                            delegate: StatRow {
-                                                readonly property var p: gpuCol.procs[index] ? gpuCol.procs[index] : null
-                                                width: parent.width
-                                                icon: "apps"
-                                                label: p ? (p.name + " (" + p.pid + ")") : ""
-                                                value: p && p.mem != null ? root.fmtBytes(p.mem, "auto", true) : ""
-                                            }
                                         }
                                     }
                                 }
