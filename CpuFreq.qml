@@ -130,7 +130,7 @@ PluginComponent {
         property string key: ""        // stable id; keyed cards remember their collapse state
         property string group: ""      // hero card key: hiding the group removes these cards entirely
         property bool show: true        // whether the section applies at all (settings / data)
-        visible: show && root.collapsed[group] !== true
+        visible: show && root.grpShown(group)
         property bool expanded: root.collapsed[group] === true
                                 ? false
                                 : key !== "" ? root.collapsed[key] !== true : true
@@ -996,6 +996,9 @@ PluginComponent {
         pluginService?.savePluginState(pluginId, "collapsed", JSON.stringify(c))
     }
 
+    // is this hero-card group currently shown?
+    function grpShown(g) { return collapsed[g] !== true }
+
     function loadSaved() {
         try {
             const raw = pluginService ? pluginService.loadPluginState(pluginId, "saved", "{}") : "{}"
@@ -1695,7 +1698,7 @@ PluginComponent {
                             }
 
                             StyledText {
-                                visible: root.tempCoreList().length === 0
+                                visible: root.grpShown("g:cpuTemp") && root.tempCoreList().length === 0
                                 width: parent.width
                                 text: "This CPU only reports a package temperature."
                                 wrapMode: Text.WordWrap
@@ -2208,7 +2211,7 @@ PluginComponent {
                             }
 
                             SegmentedControl {
-                                visible: root.batPageOptions.length > 1
+                                visible: root.grpShown("g:bat") && root.batPageOptions.length > 1
                                 width: parent.width
                                 options: root.batPageOptions
                                 current: pop.batPageActive
@@ -2217,7 +2220,7 @@ PluginComponent {
 
                             // ------------------------------------ overview ----
                             Column {
-                                visible: pop.batPageActive === "overview"
+                                visible: root.grpShown("g:bat") && pop.batPageActive === "overview"
                                 width: parent.width
                                 spacing: Theme.spacingL
 
@@ -2372,7 +2375,7 @@ PluginComponent {
 
                             // ------------------------------------ charging ----
                             Column {
-                                visible: pop.batPageActive === "charging"
+                                visible: root.grpShown("g:bat") && pop.batPageActive === "charging"
                                 width: parent.width
                                 spacing: Theme.spacingL
 
@@ -2552,7 +2555,7 @@ PluginComponent {
 
                             // ------------------------------------- tuning ----
                             Column {
-                                visible: pop.batPageActive === "tuning"
+                                visible: root.grpShown("g:bat") && pop.batPageActive === "tuning"
                                 width: parent.width
                                 spacing: Theme.spacingL
 
