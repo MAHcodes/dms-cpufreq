@@ -122,9 +122,9 @@ asking. Use `bash install.sh --auth` for prompts instead; re-run the installer t
 Components follow Material 3: primary tabs, a primary-container hero card per tab, filled
 surface-container cards for each group of rows (click a card's header to collapse it, or its hero
 card to hide the whole group — remembered across popout opens and reboots). Segmented buttons and
-action buttons are DMS's own Material You 3 components (`DButtonGroup` / `DButton` from
-`qs.DCommon.Widgets` — the same ones the built-in battery widget's power profile section uses),
-wrapped in thin adapters that keep this plugin's API. Switches, sliders, tabs and progress
+action buttons are DMS's own Material You 3 components (`DButtonGroup` / `DButton` / `DToggle` /
+`DSlider` / `DTabBar` from `qs.DCommon.Widgets` — the same ones the built-in battery widget's
+power profile section uses), wrapped in thin adapters that keep this plugin's API. Progress
 indicators are custom, styled to match. Bar text and icons are sized exactly like the built-in
 DankBar widgets (`Theme.barTextSize`
 with the bar's thickness, font scale and "maximize widget text" settings, and the icon size DMS

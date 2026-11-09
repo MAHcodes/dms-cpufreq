@@ -1,8 +1,10 @@
 import QtQuick
 import qs.Common
-import qs.Widgets
+import qs.DCommon.Widgets as DCommon
 
-// Material 3 primary tabs: icon over label, 3px indicator under the active tab.
+// The plugin's tab strip, now a thin adapter over DMS's DTabBar —
+// true Material You 3 tabs. Keeps the plugin API:
+// model [{ key, label, icon }], current (key), selected(key).
 Item {
     id: tabs
 
@@ -10,77 +12,19 @@ Item {
     property string current: ""
     signal selected(string key)
 
-    height: 60
+    height: bar.height
 
-    Row {
-        anchors.fill: parent
-
-        Repeater {
-            model: tabs.model
-
-            delegate: Item {
-                id: tab
-                readonly property bool active: modelData.key === tabs.current
-
-                width: tabs.model.length > 0 ? tabs.width / tabs.model.length : tabs.width
-                height: tabs.height
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    radius: Theme.cornerRadius
-                    color: Theme.primary
-                    opacity: mouse.pressed ? 0.12 : (mouse.containsMouse ? 0.08 : 0)
-                }
-
-                Column {
-                    anchors.centerIn: parent
-                    spacing: 2
-
-                    DankIcon {
-                        name: modelData.icon
-                        size: Theme.iconSize - 4
-                        color: tab.active ? Theme.primary : Theme.surfaceVariantText
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                    StyledText {
-                        text: modelData.label
-                        width: tab.width - Theme.spacingS * 2
-                        horizontalAlignment: Text.AlignHCenter
-                        elide: Text.ElideRight
-                        font.pixelSize: Theme.fontSizeSmall
-                        font.weight: tab.active ? Font.Bold : Font.Normal
-                        color: tab.active ? Theme.primary : Theme.surfaceVariantText
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-                }
-
-                Rectangle {
-                    visible: tab.active
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: Math.min(parent.width - 16, 40)
-                    height: 3
-                    radius: 1.5
-                    color: Theme.primary
-                }
-
-                MouseArea {
-                    id: mouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: tabs.selected(modelData.key)
-                }
-            }
-        }
-    }
-
-    Rectangle {
-        anchors.bottom: parent.bottom
+    DCommon.DTabBar {
+        id: bar
         width: parent.width
-        height: 1
-        color: Theme.outlineStrong
-        opacity: 0.4
+
+        model: tabs.model.map(m => ({ text: m.label, icon: m.icon }))
+        currentIndex: {
+            for (let i = 0; i < tabs.model.length; i++)
+                if (tabs.model[i].key === tabs.current)
+                    return i
+            return -1
+        }
+        onTabClicked: index => tabs.selected(tabs.model[index].key)
     }
 }

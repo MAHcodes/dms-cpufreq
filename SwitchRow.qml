@@ -1,7 +1,11 @@
 import QtQuick
 import qs.Common
 import qs.Widgets
+import qs.DCommon.Widgets as DCommon
 
+// List item: leading icon, label, and DMS's Material You 3 switch (DToggle).
+// Keeps the plugin API: icon / label / checked / toggled(value). The whole
+// row toggles, like a Material list item with a trailing switch.
 Item {
     id: r
 
@@ -10,7 +14,7 @@ Item {
     property bool checked: false
     signal toggled(bool value)
 
-    height: 48
+    height: Math.max(48, sw.height)
 
     Row {
         anchors.left: parent.left
@@ -26,29 +30,33 @@ Item {
         }
         StyledText {
             text: r.label
-            width: Math.max(0, r.width - 70 - (r.icon !== "" ? Theme.iconSize - 4 + Theme.spacingM : 0))
-            elide: Text.ElideRight
             font.pixelSize: Theme.fontSizeMedium
             color: Theme.surfaceText
+            elide: Text.ElideRight
+            width: Math.max(0, r.width - 70 - (r.icon !== "" ? Theme.iconSize - 4 + Theme.spacingM : 0))
             anchors.verticalCenter: parent.verticalCenter
         }
     }
 
-    M3Switch {
+    DCommon.DToggle {
+        id: sw
+        hideText: true
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
         checked: r.checked
         onToggled: value => r.toggled(value)
     }
 
-    // whole row is clickable, like a Material list item with a trailing switch
     MouseArea {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        anchors.rightMargin: 60
+        anchors.rightMargin: 70
         cursorShape: Qt.PointingHandCursor
-        onClicked: r.toggled(!r.checked)
+        onClicked: {
+            sw.checked = !sw.checked
+            r.toggled(sw.checked)
+        }
     }
 }
