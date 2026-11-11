@@ -3,8 +3,10 @@ import qs.Common
 import qs.Widgets
 
 // Pill tab strip (Material 3 expressive chips): the selected tab is a filled
-// primary pill, the others are tonal pills. Scrolls sideways if the tabs do
-// not fit. Keeps the plugin API:
+// primary pill, the others are tonal pills. When the tabs do not fit the strip
+// overflows: scroll it with the mouse wheel, drag it, use the edge chevrons,
+// or just select tabs — the selected pill always scrolls itself into view, so
+// every tab stays reachable. Keeps the plugin API:
 // model [{ key, label, icon }], current (key), selected(key).
 Item {
     id: tabs
@@ -15,10 +17,41 @@ Item {
 
     readonly property int gap: 8
     readonly property int pillHeight: 44
+    // true when the pills together are wider than the strip and need scrolling
+    readonly property bool overflowing: strip.width > width + 1
 
     height: pillHeight
 
     function onColor(c) { return c.hslLightness > 0.55 ? "#1c1b1f" : "#ffffff" }
+
+    // scroll the selected pill fully into view
+    function revealCurrent() {
+        if (!overflowing) {
+            flick.contentX = 0
+            return
+        }
+        for (let i = 0; i < model.length; i++) {
+            if (model[i].key !== current)
+                continue
+            const pill = pills.itemAt(i)
+            if (!pill)
+                return
+            if (pill.x < flick.contentX)
+                flick.contentX = Math.max(0, pill.x - gap)
+            else if (pill.x + pill.width > flick.contentX + width)
+                flick.contentX = Math.min(strip.width - width, pill.x + pill.width - width + gap)
+            return
+        }
+    }
+
+    function scrollBy(amount) {
+        flick.contentX = Math.max(0, Math.min(strip.width - width, flick.contentX + amount))
+    }
+
+    onCurrentChanged: Qt.callLater(revealCurrent)
+    onModelChanged: Qt.callLater(revealCurrent)
+    onWidthChanged: Qt.callLater(revealCurrent)
+    Component.onCompleted: Qt.callLater(revealCurrent)
 
     Flickable {
         id: flick
@@ -28,6 +61,8 @@ Item {
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         flickableDirection: Flickable.HorizontalFlick
+        // let drags fall through to surrounding scroll views when it all fits
+        interactive: tabs.overflowing
 
         Row {
             id: strip
@@ -37,6 +72,8 @@ Item {
                 ? (tabs.width - (tabs.model.length - 1) * tabs.gap) / tabs.model.length : 0
 
             Repeater {
+                id: pills
+
                 model: tabs.model
 
                 delegate: Rectangle {
@@ -94,5 +131,67 @@ Item {
                 }
             }
         }
+    }
+
+    // mouse wheel scrolls the strip; accepts no buttons so clicks and drags
+    // still reach the pills underneath
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.NoButton
+        enabled: tabs.overflowing
+        onWheel: wheel => {
+            const d = wheel.angleDelta.x !== 0 ? wheel.angleDelta.x : wheel.angleDelta.y
+            if (d === 0)
+                return
+            wheel.accepted = true
+            tabs.scrollBy(-d)
+        }
+    }
+
+    // edge chevrons, shown only while tabs are hidden on that side
+    component EdgeChevron: Rectangle {
+        id: chevron
+
+        property bool leading: true
+
+        readonly property bool more: leading
+            ? flick.contentX > 1
+            : flick.contentX < flick.contentWidth - flick.width - 1
+
+        anchors.verticalCenter: parent.verticalCenter
+        width: 28
+        height: 28
+        radius: height / 2
+        visible: tabs.overflowing && more
+        color: area.containsMouse || area.pressed
+            ? Qt.tint(Theme.surfaceContainerHighest,
+                      Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.25))
+            : Qt.tint(Theme.surfaceContainerHighest,
+                      Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.12))
+
+        DankIcon {
+            anchors.centerIn: parent
+            name: chevron.leading ? "chevron_left" : "chevron_right"
+            size: 18
+            color: Theme.surfaceText
+        }
+
+        MouseArea {
+            id: area
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: tabs.scrollBy(chevron.leading ? -tabs.width * 0.7 : tabs.width * 0.7)
+        }
+    }
+
+    EdgeChevron {
+        anchors.left: parent.left
+        leading: true
+    }
+
+    EdgeChevron {
+        anchors.right: parent.right
+        leading: false
     }
 }
