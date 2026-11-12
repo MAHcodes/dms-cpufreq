@@ -21,7 +21,12 @@ Six metrics, each with its own **popout tab** and its own **settings tab**:
 | Disk | every mounted filesystem | bar values (any mix: percent, used, free, used/total), unit, mount point |
 | Battery | see [Battery and TLP](#battery-and-tlp) | bar values (any mix: charge, time remaining, power, energy), keep limits across reboots, toggle each popout page (health, charging, tuning) |
 
-Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**.
+Every metric also has: **show in bar**, **show tab in popout**, **show icon in bar**, **show unit in bar**,
+plus three optional bar decorations, each on its own toggle: a progress **ring** around the icon, a small
+**progress bar** (vertical in vertical bars) in front of the value and a **graph** (sparkline of the last 30
+readings, one per refresh). Decorations use each value's own scale and hide for values without one, such as
+battery time remaining or GPU power draw without a power limit; fan speed scales against the fastest speed
+seen this session, showing 0% while the fans are stopped.
 Only frequency is shown in the bar by default. Metrics your hardware does not report are hidden automatically.
 
 See [STATS.md](STATS.md) for a guide to every reading: what it means, where it comes from and its quirks.
@@ -162,4 +167,5 @@ provides), so they follow your bar settings; the popout uses `fontSizeSmall` / `
 * NixOS: `install.sh` does not apply; package the helper and policy declaratively.
 * The vertical bar stacks each entry's unit under its number (smaller font, when *show unit in bar*
   is on) and separates entries with spacing instead of two spaces. The optional separator applies
-  in both orientations. Wide `/`-joined numbers (`used/total`) split over lines so they fit.
+  in both orientations. Wide `/`-joined numbers (`used/total`) split over lines so they fit. In
+  vertical bars the progress bar fills bottom-up and the graph sits under the unit.

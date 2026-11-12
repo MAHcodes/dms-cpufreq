@@ -121,6 +121,30 @@ PluginSettings {
 
     ToggleSetting {
         visible: root.tab === "cpu"
+        settingKey: "cpuRing"
+        label: "Ring around bar icon"
+        description: "Progress ring on the value's 0-100% scale; values without a scale keep the plain icon"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
+        settingKey: "cpuGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "cpu"
         settingKey: "cpuBarShowMin"
         label: "Bar: frequency minimum"
         description: "Several can be on at once; each value becomes its own bar item"
@@ -312,6 +336,30 @@ PluginSettings {
 
     ToggleSetting {
         visible: root.tab === "mem"
+        settingKey: "memRing"
+        label: "Ring around bar icon"
+        description: "Progress ring on the value's 0-100% scale"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
+        settingKey: "memGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "mem"
         settingKey: "memBarShowPercent"
         label: "Bar: percent used"
         description: "Several can be on at once; each value becomes its own bar item"
@@ -384,6 +432,30 @@ PluginSettings {
         settingKey: "gpuShowUnit"
         label: "Show unit in bar"
         defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuRing"
+        label: "Ring around bar icon"
+        description: "Progress ring on the value's 0-100% scale; values without a scale keep the plain icon"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "gpu"
+        settingKey: "gpuGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
     }
 
     ToggleSetting {
@@ -528,6 +600,30 @@ PluginSettings {
         defaultValue: true
     }
 
+    ToggleSetting {
+        visible: root.tab === "fans"
+        settingKey: "fansRing"
+        label: "Ring around bar icon"
+        description: "Progress ring; fan speed is relative to the fastest speed seen this session (0% when stopped)"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "fans"
+        settingKey: "fansProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "fans"
+        settingKey: "fansGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
+    }
+
     SelectionSetting {
         visible: root.tab === "fans"
         settingKey: "fansDisplay"
@@ -565,6 +661,30 @@ PluginSettings {
         settingKey: "diskShowUnit"
         label: "Show unit in bar"
         defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskRing"
+        label: "Ring around bar icon"
+        description: "Progress ring on the value's 0-100% scale"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "disk"
+        settingKey: "diskGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
     }
 
     ToggleSetting {
@@ -644,6 +764,30 @@ PluginSettings {
         settingKey: "batShowUnit"
         label: "Show unit in bar"
         defaultValue: true
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batRing"
+        label: "Ring around bar icon"
+        description: "Progress ring on the value's 0-100% scale; values without a scale keep the plain icon"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batProgress"
+        label: "Progress bar in bar"
+        description: "Small fill bar in front of the value; vertical in vertical bars"
+        defaultValue: false
+    }
+
+    ToggleSetting {
+        visible: root.tab === "bat"
+        settingKey: "batGraph"
+        label: "Graph in bar"
+        description: "Sparkline of the last 30 readings, one per refresh"
+        defaultValue: false
     }
 
     ToggleSetting {

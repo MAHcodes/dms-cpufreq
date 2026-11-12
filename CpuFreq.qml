@@ -74,6 +74,51 @@ PluginComponent {
         }
     }
 
+    // Sparkline of recent 0..1 readings for bar entries (see barItems): a thin
+    // line with a faint fill underneath, repainted when the history changes.
+    component Sparkline: Canvas {
+        id: spark
+
+        property var values: []
+        property color lineColor: Theme.primary
+
+        readonly property color fillColor: Qt.rgba(lineColor.r, lineColor.g, lineColor.b, 0.14)
+
+        antialiasing: true
+        renderStrategy: Canvas.Cooperative
+        contextType: "2d"
+
+        onValuesChanged: requestPaint()
+        onLineColorChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+        onAvailableChanged: requestPaint()
+
+        onPaint: {
+            const ctx = getContext("2d")
+            if (!ctx) return
+            ctx.reset()
+            const v = values
+            if (!v || v.length < 2) return
+            const pad = 1
+            const stepX = width / (v.length - 1)
+            const yOf = f => height - pad - f * (height - pad * 2)
+            ctx.beginPath()
+            ctx.moveTo(0, yOf(v[0]))
+            for (let i = 1; i < v.length; i++) ctx.lineTo(i * stepX, yOf(v[i]))
+            ctx.strokeStyle = spark.lineColor
+            ctx.lineWidth = 1.5
+            ctx.lineJoin = "round"
+            ctx.lineCap = "round"
+            ctx.stroke()
+            ctx.lineTo(width, height)
+            ctx.lineTo(0, height)
+            ctx.closePath()
+            ctx.fillStyle = spark.fillColor
+            ctx.fill()
+        }
+    }
+
     // Hero card for the top of each tab (Material 3 expressive): a progress ring
     // with the icon inside, a big value and a caption. With a key set, clicking
     // it collapses the section cards underneath (which carry the same key as
@@ -895,16 +940,110 @@ PluginComponent {
         return ["", ""]
     }
 
+    // ============================== bar rings / progress bars / graphs =====
+    // Every bar entry can add a progress ring around its icon, a small progress
+    // bar and a sparkline (each optional, per metric). All three need the value
+    // as a 0..1 fraction on its own scale; barFraction returns -1 when a value
+    // has no natural scale (battery time, power without a GPU limit), so the
+    // decorations hide for it. Fan speed scales against the fastest speed seen.
+    function barFraction(key, val) {
+        if (key === "cpu") {
+            if (val === "temp") {
+                const mc = pkgTemp()
+                return mc === null ? -1 : clamp100((mc / 1000 - 20) / 80)
+            }
+            if (val === "usage") return clamp100(usageAll / 100)
+            const f = freqFraction(panelFreq(val))
+            return f < 0 ? -1 : f / 100
+        }
+        if (key === "mem") {
+            if (!mem || mem.total <= 0) return -1
+            if (val === "available") return clamp100(100 * memKB(mem.avail) / memTotalB()) / 100
+            if (val === "free") return mem.free == null ? -1 : clamp100(100 * memKB(mem.free) / memTotalB()) / 100
+            return memPct() / 100
+        }
+        if (key === "gpu") {
+            const g = gpuSel()
+            if (!g) return -1
+            if (val === "usage") return (g.usage === null || g.usage === undefined) ? -1 : clamp100(g.usage) / 100
+            if (val === "temp") return (g.temp === null || g.temp === undefined) ? -1 : clamp100((g.temp / 1000 - 20) / 80)
+            if (val === "vram") return g.vramTotal > 0 ? clamp100(gpuVramPct(g)) / 100 : -1
+            if (val === "power") return (g.powerW != null && g.powerLimitW > 0)
+                ? clamp100(100 * g.powerW / g.powerLimitW) / 100 : -1
+            if (val === "clock") return (g.freq != null && g.freqMax > 0)
+                ? clamp100(100 * g.freq / g.freqMax) / 100 : -1
+            return -1
+        }
+        if (key === "fans") {
+            const r = fanRpm()
+            if (r === null) return -1
+            // stopped fans read 0 rpm: show 0% instead of hiding; spinning fans
+            // are relative to the fastest speed seen this session
+            return r / Math.max(fansMax, r, 1)
+        }
+        if (key === "disk") {
+            const d = diskSel()
+            if (!d || (d.used + d.avail) <= 0) return -1
+            if (val === "free") return d.avail / (d.used + d.avail)
+            return d.used / (d.used + d.avail)
+        }
+        if (key === "bat") {
+            if (!bats.length) return -1
+            if (val === "time" || val === "power") return -1
+            if (val === "energy") {
+                const t = batTotals()
+                return t.haveEnergy && t.ef > 0 ? t.en / t.ef : -1
+            }
+            return batPct() / 100
+        }
+        return -1
+    }
+
+    readonly property int graphPoints: 30      // sparkline length (readings)
+    property var graphData: ({})               // "<metric>/<value>" -> [0..1, ...]
+    property real fansMax: 0                   // fastest fan speed seen this session
+
+    // Called once per poll (from handleStatus) so history exists before the
+    // decorations are switched on, for every metric value, shown or not.
+    function recordGraphs() {
+        if (fans.length) {
+            const r = fanRpm()
+            if (r !== null) fansMax = Math.max(fansMax, r)
+        }
+        const next = {}
+        for (const key of metricKeys) {
+            const vals = key === "fans" ? ["fans"] : barValueDefs[key].values
+            for (const v of vals) {
+                const id = key + "/" + v
+                const prev = graphData[id] || []
+                const f = barFraction(key, v)
+                if (f < 0) { next[id] = prev; continue }
+                const h = prev.slice()
+                h.push(f)
+                while (h.length > graphPoints) h.shift()
+                next[id] = h
+            }
+        }
+        graphData = next
+    }
+
+    function graphHist(key, val) {
+        const h = graphData[key + "/" + val]
+        return h || []
+    }
+
     // Every bar item: one per (metric × shown value), all sharing the metric's
     // icon, so a multi-value metric reads as separate entries.
     // `used/total` stays one item because it is one value.
+    // `frac` (0..1, or -1) feeds ring/progress/graph, `hist` the sparkline.
     function barItems() {
         const out = []
         for (const key of metricKeys) {
             if (!barShown(key)) continue
             for (const v of barValuesOn(key)) {
                 const p = barPartsFor(key, v)
-                out.push({ key: key, icon: metricIcon(key), num: p[0], unit: p[1] })
+                out.push({ key: key, icon: metricIcon(key), num: p[0], unit: p[1],
+                           frac: barFraction(key, v), hist: graphHist(key, v) })
             }
         }
         return out
@@ -969,6 +1108,7 @@ PluginComponent {
 
         snap = j
         err = ""
+        recordGraphs()
         refreshTabs()
     }
 
@@ -1377,7 +1517,19 @@ PluginComponent {
                 model: root.barItemsList
 
                 delegate: Row {
+                    id: hItem
+
+                    readonly property bool showRing: root.barIconShown(modelData.key)
+                        && root.opt(modelData.key + "Ring", false) && modelData.frac >= 0
+                    readonly property bool showProg: root.opt(modelData.key + "Progress", false)
+                        && modelData.frac >= 0
+                    readonly property bool showGraph: root.opt(modelData.key + "Graph", false)
+                        && modelData.hist.length > 1
+
                     spacing: 0
+                    // entries without a ring are shorter than ringed ones; center
+                    // each entry in the pill row instead of stacking from the top
+                    anchors.verticalCenter: parent.verticalCenter
 
                     StyledText {
                         visible: index > 0 && root.barSep() === "none"
@@ -1413,17 +1565,63 @@ PluginComponent {
                         spacing: Theme.spacingXS
                         anchors.verticalCenter: parent.verticalCenter
 
+                        // icon, plain or inside a progress ring
+                        Ring {
+                            visible: hItem.showRing
+                            width: root.barIconSize + 8
+                            height: root.barIconSize + 8
+                            strokeWidth: 2
+                            value: modelData.frac * 100
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            DankIcon {
+                                anchors.centerIn: parent
+                                name: modelData.icon
+                                size: root.barIconSize
+                                color: Theme.primary
+                            }
+                        }
                         DankIcon {
-                            visible: root.barIconShown(modelData.key)
+                            visible: root.barIconShown(modelData.key) && !hItem.showRing
                             name: modelData.icon
                             size: root.barIconSize
                             color: Theme.primary
                             anchors.verticalCenter: parent.verticalCenter
                         }
+                        // small progress bar in front of the value
+                        Item {
+                            visible: hItem.showProg
+                            width: Math.round(root.barIconSize * 1.4)
+                            height: 4
+                            anchors.verticalCenter: parent.verticalCenter
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: 2
+                                color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                            }
+                            Rectangle {
+                                visible: modelData.frac > 0
+                                width: Math.max(parent.height, parent.width * modelData.frac)
+                                radius: 2
+                                color: Theme.primary
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.bottom: parent.bottom
+                            }
+                        }
                         StyledText {
                             text: modelData.num + modelData.unit
                             font.pixelSize: root.barFontSize
                             color: root.barTextColor
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        // trailing sparkline of recent readings
+                        Sparkline {
+                            visible: hItem.showGraph
+                            values: modelData.hist
+                            width: Math.round(root.barIconSize * 1.6)
+                            height: Math.round(root.barFontSize * 0.9)
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
@@ -1448,6 +1646,15 @@ PluginComponent {
                 model: root.barItemsList
 
                 delegate: Column {
+                    id: vItem
+
+                    readonly property bool showRing: root.barIconShown(modelData.key)
+                        && root.opt(modelData.key + "Ring", false) && modelData.frac >= 0
+                    readonly property bool showProg: root.opt(modelData.key + "Progress", false)
+                        && modelData.frac >= 0
+                    readonly property bool showGraph: root.opt(modelData.key + "Graph", false)
+                        && modelData.hist.length > 1
+
                     readonly property var nums: modelData.num.split("/")
 
                     spacing: Theme.spacingXS
@@ -1470,12 +1677,50 @@ PluginComponent {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
 
+                    // icon, plain or inside a progress ring
+                    Ring {
+                        visible: vItem.showRing
+                        width: root.barIconSize + 8
+                        height: root.barIconSize + 8
+                        strokeWidth: 2
+                        value: modelData.frac * 100
+                        anchors.horizontalCenter: parent.horizontalCenter
+
+                        DankIcon {
+                            anchors.centerIn: parent
+                            name: modelData.icon
+                            size: root.barIconSize
+                            color: Theme.primary
+                        }
+                    }
                     DankIcon {
-                        visible: root.barIconShown(modelData.key)
+                        visible: root.barIconShown(modelData.key) && !vItem.showRing
                         name: modelData.icon
                         size: root.barIconSize
                         color: Theme.primary
                         anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    // small vertical progress bar between icon and value
+                    Item {
+                        visible: vItem.showProg
+                        width: 4
+                        height: Math.round(root.barIconSize * 1.2)
+                        anchors.horizontalCenter: parent.horizontalCenter
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 2
+                            color: Qt.rgba(Theme.primary.r, Theme.primary.g, Theme.primary.b, 0.18)
+                        }
+                        Rectangle {
+                            visible: modelData.frac > 0
+                            height: Math.max(parent.width, parent.height * modelData.frac)
+                            radius: 2
+                            color: Theme.primary
+                            anchors.bottom: parent.bottom
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                        }
                     }
                     StyledText {
                         text: nums[0]
@@ -1499,6 +1744,14 @@ PluginComponent {
                         text: modelData.unit.trim()
                         font.pixelSize: Math.max(9, root.barFontSize - 4)
                         color: root.barTextColor
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+                    // trailing sparkline of recent readings
+                    Sparkline {
+                        visible: vItem.showGraph
+                        values: modelData.hist
+                        width: Math.round(root.barIconSize * 1.6)
+                        height: Math.round(root.barFontSize * 0.9)
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
                 }
